@@ -20,6 +20,17 @@ class VerifyOtpOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
     is_new_user: bool
+    role: str  # "consumer" | "agent" | "admin"
+
+
+class MeOut(BaseModel):
+    id: int
+    phone: str
+    name: str
+    preferred_language: str
+    role: str
+
+    model_config = {"from_attributes": True}
 
 
 class TokenPayload(BaseModel):
