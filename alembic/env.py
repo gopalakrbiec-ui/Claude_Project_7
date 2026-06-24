@@ -15,9 +15,15 @@ import app.models  # noqa: F401 — registers all ORM models with Base.metadata
 config = context.config
 settings = get_settings()
 
-# Override sqlalchemy.url from our settings so we don't duplicate DSN in alembic.ini
-# Strip the +asyncpg driver for synchronous Alembic offline mode; keep it for online.
-config.set_main_option("sqlalchemy.url", str(settings.database_url))
+# Override sqlalchemy.url from our settings so we don't duplicate DSN in alembic.ini.
+# Normalise to postgresql+asyncpg:// — Railway (and some other hosts) supply a plain
+# postgresql:// URL which makes SQLAlchemy pick psycopg2, but only asyncpg is installed.
+_db_url = str(settings.database_url).replace(
+    "postgresql://", "postgresql+asyncpg://", 1
+).replace(
+    "postgres://", "postgresql+asyncpg://", 1
+)
+config.set_main_option("sqlalchemy.url", _db_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
