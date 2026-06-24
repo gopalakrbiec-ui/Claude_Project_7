@@ -8,6 +8,7 @@ from app.models.generation_job import JobStatus
 from app.models.order import Order, OrderStatus
 from app.repositories.generation_job import GenerationJobRepository
 from app.repositories.order import OrderRepository
+from app.services.agent import AgentService
 from app.workers.pipeline import (
     run_build_prompt,
     run_generate,
@@ -101,7 +102,13 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
         # ── Step 4: Watermark ─────────────────────────────────────────────────
         watermarked = await run_watermark(gen_output)
 
-        # ── Step 5: Upload ────────────────────────────────────────────────────
+        # ── Step 5: Upload + commission — single atomic commit ────────────────
+        #
+        # commit=False defers the DB commit so we can include the commission
+        # ledger row in the same transaction as order.status=done.
+        # The S3 upload happens immediately (idempotent PUT); only the DB
+        # commit is held.  If the worker crashes before the commit, the order
+        # stays at status=generating and a retry re-runs from upload onward.
         await run_upload(
             order,
             job.id,
@@ -109,7 +116,16 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
             session=session,
             storage_adapter=ctx["storage_adapter"],
             media_type=gen_output.media_type,
+            commit=False,
         )
+
+        # Re-fetch order so agent_id and price_paise are loaded in this session
+        await session.refresh(order)
+        await AgentService(session).pay_commission(order)
+
+        # Single commit: order=done + commission entry land together.
+        await session.commit()
+        logger.info("Order %s: upload + commission committed atomically", order.id)
 
     except Exception:
         logger.exception("generate_content: unhandled error for order_id=%s", order_id)

@@ -178,11 +178,20 @@ async def run_upload(
     session: AsyncSession,
     storage_adapter: StorageAdapter,
     media_type: str = "image",
+    commit: bool = True,
 ) -> dict:
     """
     Upload the watermarked output to R2/MinIO and record the object keys.
     Content-type and file extension are derived from media_type.
     Returns the output_keys dict stored on the job row.
+
+    commit=False
+    ------------
+    Pass commit=False when the caller needs to add more writes to the same
+    transaction before committing (e.g. a commission ledger entry).  The
+    S3 upload is always performed immediately; only the DB commit is deferred.
+    S3 PUT is idempotent so a crash before the DB commit is safe — a retry
+    just re-uploads the same bytes to the same key.
     """
     job_repo = GenerationJobRepository(session)
     order_repo = OrderRepository(session)
@@ -197,9 +206,11 @@ async def run_upload(
 
     await job_repo.set_result(job_id, status=JobStatus.done, output_keys=output_keys)
     await order_repo.update_status(order.id, OrderStatus.done)
-    await session.commit()
 
-    logger.info("Order %s done — uploaded to %s", order.id, key)
+    if commit:
+        await session.commit()
+        logger.info("Order %s done — uploaded to %s", order.id, key)
+
     return output_keys
 
 
