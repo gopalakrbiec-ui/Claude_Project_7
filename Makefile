@@ -23,7 +23,7 @@ format:
 	ruff check --fix .
 
 test:
-	pytest
+	python -m pytest
 
 # ── Database ─────────────────────────────────────────────────────────────────
 
