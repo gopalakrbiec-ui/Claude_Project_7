@@ -9,9 +9,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
 from app.core.database import Base
+import app.models  # noqa: F401 — registers all ORM models with Base.metadata
 
-# Import all models here so Alembic sees their metadata.
-# e.g.: from app.models import user, wallet  # noqa: F401
 
 config = context.config
 settings = get_settings()
