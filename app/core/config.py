@@ -63,9 +63,41 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     gen_provider: str = Field(
         default="stub",
-        description="Which generation adapter to use: stub | stability | replicate | ...",
+        description="Which generation adapter to use: stub | fal | composite",
     )
     gen_provider_api_key: str = Field(default="")
+
+    # fal.ai model selection (only used when gen_provider=fal)
+    gen_image_model: str = Field(
+        default="fal-ai/flux/dev",
+        description="fal.ai model ID for image generation",
+    )
+    gen_video_model: str = Field(
+        default="fal-ai/cogvideox-5b",
+        description="fal.ai model ID for video generation",
+    )
+
+    # Cost (paise) charged to the ledger per output; set to match your fal.ai plan
+    gen_image_cost_paise: int = Field(
+        default=250,
+        description="Standard cost per image in paise (₹2.50 default)",
+    )
+    gen_video_cost_paise: int = Field(
+        default=800,
+        description="Standard cost per video in paise (₹8.00 default)",
+    )
+
+    # Hard wall-clock budgets for the entire generate() call (submit + poll)
+    gen_image_timeout_seconds: float = Field(default=300.0)
+    gen_video_timeout_seconds: float = Field(default=600.0)
+    gen_max_retries: int = Field(default=3)
+
+    # ------------------------------------------------------------------
+    # Claude adapter limits
+    # ------------------------------------------------------------------
+    claude_moderation_timeout_seconds: float = Field(default=30.0)
+    claude_prompt_timeout_seconds: float = Field(default=60.0)
+    claude_max_retries: int = Field(default=3)
 
     # ------------------------------------------------------------------
     # Worker settings

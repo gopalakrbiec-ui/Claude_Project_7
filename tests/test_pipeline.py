@@ -147,7 +147,10 @@ def _make_ctx(db: AsyncSession, **overrides) -> dict:
         "session": db,
         "moderation_adapter": FakeModerationAdapter(),
         "claude_adapter": FakeClaudeAdapter(),
-        "generation_provider": FakeGenerationAdapter(),
+        # Both image and video providers; jobs.py selects based on order.input_payload
+        "image_provider": FakeGenerationAdapter(),
+        "video_provider": FakeGenerationAdapter(),
+        "generation_provider": FakeGenerationAdapter(),  # legacy fallback
         "storage_adapter": FakeStorageAdapter(),
     }
     ctx.update(overrides)
@@ -190,6 +193,7 @@ async def test_clean_pipeline_end_to_end(db: AsyncSession):
     assert len(storage.store) == 1
     uploaded_key = f"orders/{order.id}/output.png"
     assert uploaded_key in storage.store
+
 
 
 async def test_blocked_order_is_rejected_and_refunded(db: AsyncSession):

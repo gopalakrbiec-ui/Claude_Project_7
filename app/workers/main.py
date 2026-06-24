@@ -14,8 +14,6 @@ logger = logging.getLogger(__name__)
 def _redis_settings() -> RedisSettings:
     settings = get_settings()
     url = str(settings.redis_url)
-    # arq expects host/port/db separately; parse from DSN.
-    # redis://host:port/db
     parts = url.replace("redis://", "").split("/")
     host_port = parts[0].split(":")
     host = host_port[0]
@@ -24,28 +22,103 @@ def _redis_settings() -> RedisSettings:
     return RedisSettings(host=host, port=port, database=db)
 
 
+def _build_generation_providers(settings) -> tuple:
+    """
+    Return (image_provider, video_provider) based on GEN_PROVIDER config.
+
+    GEN_PROVIDER=stub     → FakeGenerationAdapter (both paths)
+    GEN_PROVIDER=composite → CompositeGenerationAdapter (image), stub (video)
+    GEN_PROVIDER=fal      → FalImageAdapter + FalVideoAdapter (real API calls)
+
+    Swapping providers never touches business logic — only this function
+    and .env need to change.
+    """
+    provider = settings.gen_provider.lower()
+
+    if provider == "fal":
+        from app.adapters.fal import FalImageAdapter, FalVideoAdapter
+
+        image_provider = FalImageAdapter(
+            api_key=settings.gen_provider_api_key,
+            model_id=settings.gen_image_model,
+            cost_paise=settings.gen_image_cost_paise,
+            max_retries=settings.gen_max_retries,
+            timeout_seconds=settings.gen_image_timeout_seconds,
+        )
+        video_provider = FalVideoAdapter(
+            api_key=settings.gen_provider_api_key,
+            model_id=settings.gen_video_model,
+            cost_paise=settings.gen_video_cost_paise,
+            max_retries=settings.gen_max_retries,
+            timeout_seconds=settings.gen_video_timeout_seconds,
+        )
+        logger.info(
+            "Generation provider: fal.ai (image=%s, video=%s)",
+            settings.gen_image_model,
+            settings.gen_video_model,
+        )
+        return image_provider, video_provider
+
+    if provider == "composite":
+        from app.adapters.generation import CompositeGenerationAdapter, FakeVideoGenerationAdapter
+
+        logger.info("Generation provider: composite (image), fake (video)")
+        return CompositeGenerationAdapter(), FakeVideoGenerationAdapter()
+
+    # Default: stub — safe for local dev
+    from app.adapters.generation import FakeGenerationAdapter, FakeVideoGenerationAdapter
+
+    logger.warning(
+        "Generation provider: stub (GEN_PROVIDER=%r) — not for production", settings.gen_provider
+    )
+    return FakeGenerationAdapter(), FakeVideoGenerationAdapter()
+
+
 async def on_startup(ctx: dict) -> None:
     """
-    Initialise long-lived resources once per worker process and store them
-    in the Arq context dict so job functions can access them.
+    Initialise long-lived resources once per worker process.
+    All adapters are stored in ctx so job functions receive them via DI.
     """
     from app.adapters.claude import ClaudePromptAdapter, FakeClaudeAdapter
-    from app.adapters.generation import CompositeGenerationAdapter, FakeGenerationAdapter
     from app.adapters.moderation import ClaudeModerationAdapter, FakeModerationAdapter
     from app.adapters.storage import FakeStorageAdapter, S3StorageAdapter
     from app.core.database import get_engine
 
     settings = get_settings()
+    ctx["engine"] = get_engine()
 
-    # DB engine / session factory
-    engine = get_engine()
-    ctx["engine"] = engine
+    # Claude adapters — real in any env that has an API key configured
+    use_claude = bool(settings.anthropic_api_key)
+    if use_claude:
+        ctx["moderation_adapter"] = ClaudeModerationAdapter(
+            api_key=settings.anthropic_api_key,
+            max_retries=settings.claude_max_retries,
+            timeout_seconds=settings.claude_moderation_timeout_seconds,
+        )
+        ctx["claude_adapter"] = ClaudePromptAdapter(
+            api_key=settings.anthropic_api_key,
+            max_retries=settings.claude_max_retries,
+            timeout_seconds=settings.claude_prompt_timeout_seconds,
+        )
+    else:
+        logger.warning("ANTHROPIC_API_KEY not set — using fake moderation/prompt adapters")
+        ctx["moderation_adapter"] = FakeModerationAdapter()
+        ctx["claude_adapter"] = FakeClaudeAdapter()
 
-    # Adapters — swap to real implementations in production via settings.gen_provider
-    if settings.app_env == "production":
-        ctx["moderation_adapter"] = ClaudeModerationAdapter(api_key=settings.anthropic_api_key)
-        ctx["claude_adapter"] = ClaudePromptAdapter(api_key=settings.anthropic_api_key)
-        ctx["generation_provider"] = CompositeGenerationAdapter()
+    # Generation adapters — selected by GEN_PROVIDER setting
+    image_provider, video_provider = _build_generation_providers(settings)
+    ctx["image_provider"] = image_provider
+    ctx["video_provider"] = video_provider
+    # Backward compat: keep "generation_provider" pointing at image by default
+    ctx["generation_provider"] = image_provider
+
+    # Storage adapter
+    use_real_storage = all([
+        settings.s3_endpoint_url,
+        settings.s3_access_key_id,
+        settings.s3_secret_access_key,
+    ])
+    if use_real_storage:
         ctx["storage_adapter"] = S3StorageAdapter(
             endpoint_url=settings.s3_endpoint_url,
             access_key_id=settings.s3_access_key_id,
@@ -54,19 +127,19 @@ async def on_startup(ctx: dict) -> None:
             region=settings.s3_region,
         )
     else:
-        logger.warning("Worker running in non-production mode — using fake adapters")
-        ctx["moderation_adapter"] = FakeModerationAdapter()
-        ctx["claude_adapter"] = FakeClaudeAdapter()
-        ctx["generation_provider"] = FakeGenerationAdapter()
+        logger.warning("S3 not configured — using in-memory fake storage")
         ctx["storage_adapter"] = FakeStorageAdapter()
 
-    logger.info("Worker startup complete (env=%s)", settings.app_env)
+    logger.info(
+        "Worker startup complete (env=%s, gen_provider=%s)",
+        settings.app_env,
+        settings.gen_provider,
+    )
 
 
 async def on_job_start(ctx: dict) -> None:
     """Open a fresh AsyncSession for each job."""
     from app.core.database import get_engine
-    from sqlalchemy.ext.asyncio import AsyncSession
 
     engine = ctx.get("engine") or get_engine()
     ctx["session"] = AsyncSession(engine, expire_on_commit=False)
@@ -80,10 +153,17 @@ async def on_job_end(ctx: dict) -> None:
 
 
 async def on_shutdown(ctx: dict) -> None:
-    """Dispose the DB engine on worker shutdown."""
+    """Dispose DB engine and close any adapter HTTP clients."""
     engine = ctx.pop("engine", None)
     if engine is not None:
         await engine.dispose()
+
+    # Close fal.ai HTTP clients if present
+    for key in ("image_provider", "video_provider"):
+        adapter = ctx.pop(key, None)
+        if adapter is not None and hasattr(adapter, "aclose"):
+            await adapter.aclose()
+
     logger.info("Worker shutdown complete")
 
 

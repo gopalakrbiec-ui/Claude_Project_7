@@ -83,12 +83,19 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
         )
 
         # ── Step 3: Generate ──────────────────────────────────────────────────
+        # Select image or video provider based on the order's requested media type.
+        # The order's input_payload carries "media_type": "image"|"video"; default image.
+        media_type = order.input_payload.get("media_type", "image")
+        provider_key = "video_provider" if media_type == "video" else "image_provider"
+        # Fall back to legacy "generation_provider" key for backward compat
+        generation_provider = ctx.get(provider_key) or ctx["generation_provider"]
+
         gen_output = await run_generate(
             order,
             job.id,
             prompt_result,
             session=session,
-            generation_provider=ctx["generation_provider"],
+            generation_provider=generation_provider,
         )
 
         # ── Step 4: Watermark ─────────────────────────────────────────────────
@@ -101,6 +108,7 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
             watermarked,
             session=session,
             storage_adapter=ctx["storage_adapter"],
+            media_type=gen_output.media_type,
         )
 
     except Exception:
