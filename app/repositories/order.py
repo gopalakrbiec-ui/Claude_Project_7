@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderStatus
@@ -44,3 +44,8 @@ class OrderRepository:
         self._session.add(order)
         await self._session.flush()  # populate order.id
         return order
+
+    async def update_status(self, order_id: int, status: OrderStatus) -> None:
+        await self._session.execute(
+            update(Order).where(Order.id == order_id).values(status=status)
+        )
