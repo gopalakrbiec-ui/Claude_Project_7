@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.workers.jobs import generate_content
 
 
 def _redis_settings() -> RedisSettings:
@@ -29,5 +29,5 @@ class WorkerSettings:
 
     redis_settings = _redis_settings()
     max_jobs = get_settings().arq_max_jobs
-    functions: list = []  # populated as jobs are added
+    functions = [generate_content]
     cron_jobs: list = []

@@ -3,7 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,10 @@ class OrderStatus(str, enum.Enum):
 class Order(Base):
     __tablename__ = "orders"
 
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_orders_idempotency_key"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
@@ -37,6 +41,9 @@ class Order(Base):
     # Customer-supplied generation parameters
     input_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     price_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Client-generated key for double-submit protection (e.g. user taps twice).
+    # Globally unique; use a UUID prefixed with user context.
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[OrderStatus] = mapped_column(
         Enum(OrderStatus, name="order_status"),
         nullable=False,
