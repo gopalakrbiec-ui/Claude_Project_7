@@ -39,24 +39,27 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------
     # S3-compatible object storage (Cloudflare R2 in prod, MinIO locally)
+    # Empty → worker falls back to FakeStorageAdapter (no uploads)
     # ------------------------------------------------------------------
-    s3_endpoint_url: str = Field(..., description="e.g. http://minio:9000 or R2 endpoint")
-    s3_access_key_id: str = Field(...)
-    s3_secret_access_key: str = Field(...)
+    s3_endpoint_url: str = Field(default="", description="e.g. http://minio:9000 or R2 endpoint")
+    s3_access_key_id: str = Field(default="")
+    s3_secret_access_key: str = Field(default="")
     s3_bucket_name: str = Field(default="weddingapp")
     s3_region: str = Field(default="auto")
 
     # ------------------------------------------------------------------
     # Razorpay (UPI / payment gateway)
+    # Empty → payment endpoints return errors but app starts
     # ------------------------------------------------------------------
-    razorpay_key_id: str = Field(...)
-    razorpay_key_secret: str = Field(...)
-    razorpay_webhook_secret: str = Field(...)
+    razorpay_key_id: str = Field(default="")
+    razorpay_key_secret: str = Field(default="")
+    razorpay_webhook_secret: str = Field(default="")
 
     # ------------------------------------------------------------------
     # Claude (Anthropic) — used for moderation and prompt generation
+    # Empty → worker falls back to FakeModerationAdapter + FakeClaudeAdapter
     # ------------------------------------------------------------------
-    anthropic_api_key: str = Field(...)
+    anthropic_api_key: str = Field(default="")
 
     # ------------------------------------------------------------------
     # Generative media provider (swappable via adapters)
