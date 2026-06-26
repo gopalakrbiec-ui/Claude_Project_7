@@ -106,10 +106,13 @@ class Settings(BaseSettings):
     # OTP / SMS delivery
     # otp_provider: console (dev) | msg91 (production)
     # ------------------------------------------------------------------
-    otp_provider: str = Field(default="console", description="console | msg91")
+    otp_provider: str = Field(default="console", description="console | msg91 | twilio")
     msg91_auth_key: str = Field(default="")
     msg91_template_id: str = Field(default="")
     msg91_sender_id: str = Field(default="WDGAPP")
+    twilio_account_sid: str = Field(default="")
+    twilio_auth_token: str = Field(default="")
+    twilio_from_number: str = Field(default="")
 
     # ------------------------------------------------------------------
     # Worker settings

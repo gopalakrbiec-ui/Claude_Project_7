@@ -61,3 +61,40 @@ class Msg91OtpAdapter:
                 logger.error("MSG91 OTP failed for %s: %s %s", phone, e.response.status_code, e.response.text)
             except httpx.RequestError as e:
                 logger.error("MSG91 OTP network error for %s: %s", phone, e)
+
+
+class TwilioOtpAdapter:
+    """
+    Production SMS delivery via Twilio.
+    No DLT registration required — works instantly in India for testing.
+
+    Required env vars:
+        TWILIO_ACCOUNT_SID  — starts with AC...
+        TWILIO_AUTH_TOKEN   — from Twilio dashboard
+        TWILIO_FROM_NUMBER  — your Twilio phone number e.g. +15551234567
+    """
+
+    def __init__(self, account_sid: str, auth_token: str, from_number: str) -> None:
+        self._account_sid = account_sid
+        self._auth_token = auth_token
+        self._from_number = from_number
+        self._url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+
+    async def send_otp(self, phone: str, code: str) -> None:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.post(
+                    self._url,
+                    auth=(self._account_sid, self._auth_token),
+                    data={
+                        "From": self._from_number,
+                        "To": phone,
+                        "Body": f"Your WeddingApp OTP is {code}. Valid for 10 minutes.",
+                    },
+                )
+                resp.raise_for_status()
+                logger.info("Twilio OTP sent to %s", phone)
+            except httpx.HTTPStatusError as e:
+                logger.error("Twilio OTP failed for %s: %s %s", phone, e.response.status_code, e.response.text)
+            except httpx.RequestError as e:
+                logger.error("Twilio OTP network error for %s: %s", phone, e)

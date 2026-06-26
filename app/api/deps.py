@@ -56,9 +56,15 @@ async def get_current_user(
 
 
 def get_otp_adapter() -> OtpAdapter:
-    from app.adapters.otp import ConsoleOtpAdapter, Msg91OtpAdapter
+    from app.adapters.otp import ConsoleOtpAdapter, Msg91OtpAdapter, TwilioOtpAdapter
     from app.core.config import get_settings
     settings = get_settings()
+    if settings.otp_provider == "twilio" and settings.twilio_account_sid:
+        return TwilioOtpAdapter(
+            account_sid=settings.twilio_account_sid,
+            auth_token=settings.twilio_auth_token,
+            from_number=settings.twilio_from_number,
+        )
     if settings.otp_provider == "msg91" and settings.msg91_auth_key:
         return Msg91OtpAdapter(
             auth_key=settings.msg91_auth_key,
