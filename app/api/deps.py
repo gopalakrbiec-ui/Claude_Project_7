@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.redis import get_redis
-from app.adapters.otp import ConsoleOtpAdapter, OtpAdapter
+from app.adapters.otp import OtpAdapter
 from app.models.user import User
 from app.repositories.user import UserRepository
 from app.services.auth import AuthService, InvalidTokenError, decode_token
@@ -56,10 +56,15 @@ async def get_current_user(
 
 
 def get_otp_adapter() -> OtpAdapter:
-    """
-    Returns the active OTP adapter.  In production, replace with a real SMS
-    gateway adapter (e.g. Gupshup, MSG91) via settings.otp_provider config.
-    """
+    from app.adapters.otp import ConsoleOtpAdapter, Msg91OtpAdapter
+    from app.core.config import get_settings
+    settings = get_settings()
+    if settings.otp_provider == "msg91" and settings.msg91_auth_key:
+        return Msg91OtpAdapter(
+            auth_key=settings.msg91_auth_key,
+            template_id=settings.msg91_template_id,
+            sender_id=settings.msg91_sender_id,
+        )
     return ConsoleOtpAdapter()
 
 

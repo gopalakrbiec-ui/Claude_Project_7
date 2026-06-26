@@ -103,6 +103,15 @@ class Settings(BaseSettings):
     claude_max_retries: int = Field(default=3)
 
     # ------------------------------------------------------------------
+    # OTP / SMS delivery
+    # otp_provider: console (dev) | msg91 (production)
+    # ------------------------------------------------------------------
+    otp_provider: str = Field(default="console", description="console | msg91")
+    msg91_auth_key: str = Field(default="")
+    msg91_template_id: str = Field(default="")
+    msg91_sender_id: str = Field(default="WDGAPP")
+
+    # ------------------------------------------------------------------
     # Worker settings
     # ------------------------------------------------------------------
     arq_max_jobs: int = Field(default=10)
