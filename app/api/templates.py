@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.repositories.template import TemplateRepository
 from app.schemas.template import TemplateOut
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/templates", tags=["templates"])
 
 
@@ -21,6 +23,10 @@ async def list_templates(
     _: User = Depends(get_current_user),
 ) -> list[TemplateOut]:
     """List active templates, optionally filtered by language and/or theme."""
-    repo = TemplateRepository(db)
-    templates = await repo.list_active(language=language, theme=theme)
-    return [TemplateOut.model_validate(t) for t in templates]
+    try:
+        repo = TemplateRepository(db)
+        templates = await repo.list_active(language=language, theme=theme)
+        return [TemplateOut.model_validate(t) for t in templates]
+    except Exception:
+        logger.exception("Failed to fetch templates")
+        return []
