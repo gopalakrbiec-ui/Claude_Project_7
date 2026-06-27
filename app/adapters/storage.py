@@ -51,6 +51,14 @@ class S3StorageAdapter:
         logger.info("Uploaded %d bytes to s3://%s/%s", len(data), self._bucket, key)
         return key
 
+    def presign(self, key: str, expires_in: int = 3600) -> str:
+        """Generate a presigned URL valid for expires_in seconds."""
+        return self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self._bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+
 
 class FakeStorageAdapter:
     """In-memory fake for tests. Stores uploaded bytes by key."""

@@ -23,5 +23,6 @@ class OrderOut(BaseModel):
     status: str
     input_payload: dict
     created_at: datetime
+    result_url: str | None = None  # presigned URL populated by GET /orders/{id}
 
     model_config = {"from_attributes": True}
