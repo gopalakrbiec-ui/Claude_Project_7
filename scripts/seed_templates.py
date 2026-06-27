@@ -22,7 +22,7 @@ TEMPLATES = [
     # ── Wedding ───────────────────────────────────────────────────────────────
     {
         "name": "Floral Wedding Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "floral",
         "base_price_paise": 2900,
         "asset_keys": json.dumps({
@@ -32,7 +32,7 @@ TEMPLATES = [
     },
     {
         "name": "Classic Wedding Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "classic",
         "base_price_paise": 1900,
         "asset_keys": json.dumps({
@@ -42,7 +42,7 @@ TEMPLATES = [
     },
     {
         "name": "Royal Wedding Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "royal",
         "base_price_paise": 4900,
         "asset_keys": json.dumps({
@@ -52,7 +52,7 @@ TEMPLATES = [
     },
     {
         "name": "Garden Wedding Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "garden",
         "base_price_paise": 2500,
         "asset_keys": json.dumps({
@@ -62,7 +62,7 @@ TEMPLATES = [
     },
     {
         "name": "Mandap Wedding Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "traditional",
         "base_price_paise": 3500,
         "asset_keys": json.dumps({
@@ -74,7 +74,7 @@ TEMPLATES = [
     # ── Birthday ──────────────────────────────────────────────────────────────
     {
         "name": "Birthday Celebration",
-        "language": "hi",
+        "language": "en",
         "theme": "birthday",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
@@ -84,7 +84,7 @@ TEMPLATES = [
     },
     {
         "name": "Kids Birthday Party",
-        "language": "hi",
+        "language": "en",
         "theme": "kids-birthday",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
@@ -96,7 +96,7 @@ TEMPLATES = [
     # ── Baby & Family ─────────────────────────────────────────────────────────
     {
         "name": "Baby Shower",
-        "language": "hi",
+        "language": "en",
         "theme": "babyshower",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
@@ -106,7 +106,7 @@ TEMPLATES = [
     },
     {
         "name": "Naming Ceremony",
-        "language": "hi",
+        "language": "en",
         "theme": "naming-ceremony",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
@@ -118,7 +118,7 @@ TEMPLATES = [
     # ── Other Events ──────────────────────────────────────────────────────────
     {
         "name": "Housewarming Invite",
-        "language": "hi",
+        "language": "en",
         "theme": "housewarming",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
