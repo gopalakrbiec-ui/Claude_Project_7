@@ -24,7 +24,7 @@ async def list_templates(
     try:
         repo = TemplateRepository(db)
         templates = await repo.list_active(language=language, theme=theme)
-        return [TemplateOut.model_validate(t) for t in templates]
+        return [TemplateOut.from_orm_with_preview(t) for t in templates]
     except Exception:
         logger.exception("Failed to fetch templates")
         return []
