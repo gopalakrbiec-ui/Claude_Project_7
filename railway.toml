@@ -1,3 +1,4 @@
+# API service (default — Railway picks this up automatically)
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
