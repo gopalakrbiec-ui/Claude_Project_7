@@ -1,13 +1,10 @@
-# API service configuration — Railway picks this up for the main service.
-# Worker service is configured via Railway UI:
-#   - Dockerfile Path: worker.dockerfile
-#   - Start Command: (empty — arq CMD in worker.dockerfile handles it)
+# API service — start command is in Dockerfile CMD.
+# Worker service is configured via Railway UI with worker.dockerfile.
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "sh -c 'uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
