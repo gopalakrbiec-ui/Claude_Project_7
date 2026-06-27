@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.adapters.fal import FalImageAdapter, FalVideoAdapter, _FalClient
+from app.adapters.fal import FalImageAdapter, FalVideoAdapter
 from app.adapters.generation import (
     CostEvent,
     FakeGenerationAdapter,
@@ -172,27 +172,28 @@ async def test_hard_timeout_not_retried():
 
 
 async def test_fal_image_adapter_happy_path():
-    """submit → poll → fetch result → download image bytes."""
+    """submit → get result → download image bytes (via fal_client SDK mock)."""
     image_bytes = b"\x89PNG fake image data"
 
-    responses = [
-        # 1. Submit — returns request_id
-        _json_resp({"request_id": "req-abc123", "status": "IN_QUEUE"}),
-        # 2. Poll — IN_PROGRESS
-        _json_resp({"status": "IN_PROGRESS"}),
-        # 3. Poll — COMPLETED
-        _json_resp({"status": "COMPLETED"}),
-        # 4. Fetch result
-        _json_resp({"images": [{"url": "https://cdn.fal.ai/img.png", "width": 512, "height": 512}]}),
-        # 5. Download image
-        httpx.Response(200, content=image_bytes, headers={"content-type": "image/png"}),
-    ]
+    mock_handler = AsyncMock()
+    mock_handler.request_id = "req-abc123"
+    mock_handler.get = AsyncMock(return_value={
+        "images": [{"url": "https://cdn.fal.ai/img.png", "width": 512, "height": 512}]
+    })
 
-    mock_client = _mock_transport(responses)
-    adapter = FalImageAdapter(api_key="test-key", cost_paise=250, model_id="fal-ai/flux/dev")
-    adapter._client._http = mock_client
+    with patch("fal_client.submit_async", return_value=mock_handler), \
+         patch("httpx.AsyncClient") as mock_http_cls:
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.content = image_bytes
+        mock_resp.raise_for_status = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        mock_http_cls.return_value = mock_http
 
-    output = await adapter.generate("A beautiful floral wedding stage")
+        adapter = FalImageAdapter(api_key="test-key", cost_paise=250, model_id="fal-ai/flux/dev")
+        output = await adapter.generate("A beautiful floral wedding stage")
 
     assert output.media_bytes == image_bytes
     assert output.cost_paise == 250
@@ -200,87 +201,28 @@ async def test_fal_image_adapter_happy_path():
     assert output.media_type == "image"
     assert output.model_id == "fal-ai/flux/dev"
 
-    await mock_client.aclose()
-
-
-async def test_fal_image_adapter_retries_on_5xx():
-    """Transient 503 on submit is retried."""
-    image_bytes = b"fake png"
-
-    call_count = 0
-    responses_iter = iter([
-        _err_resp(503),         # submit fails
-        _err_resp(503),         # submit fails again
-        _json_resp({"request_id": "req-xyz", "status": "IN_QUEUE"}),  # submit succeeds
-        _json_resp({"status": "COMPLETED"}),  # poll
-        _json_resp({"images": [{"url": "https://cdn.fal.ai/img.png"}]}),  # result
-        httpx.Response(200, content=image_bytes),  # download
-    ])
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return next(responses_iter)
-
-    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = FalImageAdapter(api_key="test-key", cost_paise=250, max_retries=3)
-    adapter._client._http = mock_client
-
-    output = await adapter.generate("Wedding stage")
-    assert output.media_bytes == image_bytes
-
-    await mock_client.aclose()
-
-
-async def test_fal_image_adapter_fails_after_max_retries():
-    """Persistent 503s exhaust retries and raise RetryExhaustedError."""
-    responses_iter = iter([_err_resp(503)] * 10)
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return next(responses_iter)
-
-    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = FalImageAdapter(api_key="test-key", max_retries=2)
-    adapter._client._http = mock_client
-
-    with pytest.raises(RetryExhaustedError):
-        await adapter.generate("Wedding stage")
-
-    await mock_client.aclose()
-
 
 async def test_fal_image_adapter_timeout():
     """Hard timeout wraps the entire generate() call."""
-    async def slow_handler(request: httpx.Request) -> httpx.Response:
+    async def slow_submit(*args, **kwargs):
         await asyncio.sleep(10)
-        return _json_resp({"request_id": "req-never"})
 
-    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(slow_handler))
-    adapter = FalImageAdapter(api_key="test-key", timeout_seconds=0.05, max_retries=1)
-    adapter._client._http = mock_client
-
-    with pytest.raises(HardTimeoutError):
-        await adapter.generate("Wedding stage")
-
-    await mock_client.aclose()
+    with patch("fal_client.submit_async", side_effect=slow_submit):
+        adapter = FalImageAdapter(api_key="test-key", timeout_seconds=0.05)
+        with pytest.raises(HardTimeoutError):
+            await adapter.generate("Wedding stage")
 
 
-async def test_fal_image_raises_on_failed_job():
-    """fal.ai FAILED status → ProviderError."""
-    responses_iter = iter([
-        _json_resp({"request_id": "req-fail", "status": "IN_QUEUE"}),
-        _json_resp({"status": "FAILED"}),
-    ])
+async def test_fal_image_raises_when_no_images():
+    """fal.ai returns empty images list → ProviderError."""
+    mock_handler = AsyncMock()
+    mock_handler.request_id = "req-fail"
+    mock_handler.get = AsyncMock(return_value={"images": []})
 
-    async def handler(request: httpx.Request) -> httpx.Response:
-        return next(responses_iter)
-
-    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    adapter = FalImageAdapter(api_key="test-key", max_retries=1)
-    adapter._client._http = mock_client
-
-    with pytest.raises(ProviderError, match="FAILED"):
-        await adapter.generate("Wedding stage")
-
-    await mock_client.aclose()
+    with patch("fal_client.submit_async", return_value=mock_handler):
+        adapter = FalImageAdapter(api_key="test-key", max_retries=1)
+        with pytest.raises(ProviderError, match="no images"):
+            await adapter.generate("Wedding stage")
 
 
 # ---------------------------------------------------------------------------
@@ -291,46 +233,41 @@ async def test_fal_image_raises_on_failed_job():
 async def test_fal_video_adapter_happy_path():
     video_bytes = b"fake mp4 data"
 
-    responses = [
-        _json_resp({"request_id": "req-vid-1", "status": "IN_QUEUE"}),
-        _json_resp({"status": "COMPLETED"}),
-        _json_resp({"video": {"url": "https://cdn.fal.ai/vid.mp4"}}),
-        httpx.Response(200, content=video_bytes, headers={"content-type": "video/mp4"}),
-    ]
+    mock_handler = AsyncMock()
+    mock_handler.request_id = "req-vid-1"
+    mock_handler.get = AsyncMock(return_value={
+        "video": {"url": "https://cdn.fal.ai/vid.mp4"}
+    })
 
-    mock_client = _mock_transport(responses)
-    adapter = FalVideoAdapter(
-        api_key="test-key",
-        cost_paise=800,
-        model_id="fal-ai/cogvideox-5b",
-    )
-    adapter._client._http = mock_client
+    with patch("fal_client.submit_async", return_value=mock_handler), \
+         patch("httpx.AsyncClient") as mock_http_cls:
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.content = video_bytes
+        mock_resp.raise_for_status = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        mock_http_cls.return_value = mock_http
 
-    output = await adapter.generate("Bride and groom in a floral garden")
+        adapter = FalVideoAdapter(api_key="test-key", cost_paise=800, model_id="fal-ai/cogvideox-5b")
+        output = await adapter.generate("Bride and groom in a floral garden")
 
     assert output.media_bytes == video_bytes
     assert output.cost_paise == 800
     assert output.media_type == "video"
     assert output.model_id == "fal-ai/cogvideox-5b"
 
-    await mock_client.aclose()
-
 
 async def test_fal_video_raises_when_no_url():
-    responses = [
-        _json_resp({"request_id": "req-vid-2", "status": "IN_QUEUE"}),
-        _json_resp({"status": "COMPLETED"}),
-        _json_resp({"video": {}}),  # missing url
-    ]
+    mock_handler = AsyncMock()
+    mock_handler.request_id = "req-vid-2"
+    mock_handler.get = AsyncMock(return_value={"video": {}})  # missing url
 
-    mock_client = _mock_transport(responses)
-    adapter = FalVideoAdapter(api_key="test-key", max_retries=1)
-    adapter._client._http = mock_client
-
-    with pytest.raises(ProviderError, match="no video url"):
-        await adapter.generate("Some prompt")
-
-    await mock_client.aclose()
+    with patch("fal_client.submit_async", return_value=mock_handler):
+        adapter = FalVideoAdapter(api_key="test-key", max_retries=1)
+        with pytest.raises(ProviderError, match="no video url"):
+            await adapter.generate("Some prompt")
 
 
 # ---------------------------------------------------------------------------
