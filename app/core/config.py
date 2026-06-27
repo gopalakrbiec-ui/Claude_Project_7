@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, RedisDsn
+from pydantic import Field, PostgresDsn, RedisDsn, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     # NEVER enable in production.
     bypass_otp: bool = Field(default=False)
 
+    # Comma-separated list of allowed CORS origins in production.
+    # e.g. "https://myapp.com,https://app.myapp.com"
+    allowed_origins: str = Field(default="")
+
     otp_provider: str = Field(default="console", description="console | msg91 | twilio")
     msg91_auth_key: str = Field(default="")
     msg91_template_id: str = Field(default="")
@@ -126,6 +130,21 @@ class Settings(BaseSettings):
     # Worker settings
     # ------------------------------------------------------------------
     arq_max_jobs: int = Field(default=10)
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
+
+    @model_validator(mode="after")
+    def _forbid_dangerous_bypasses_in_production(self) -> "Settings":
+        if self.app_env == "production":
+            if self.bypass_otp:
+                raise ValueError("bypass_otp must not be enabled in production")
+            if self.bypass_payments:
+                raise ValueError("bypass_payments must not be enabled in production")
+            if not self.razorpay_webhook_secret:
+                raise ValueError("RAZORPAY_WEBHOOK_SECRET is required in production")
+        return self
 
 
 @lru_cache(maxsize=1)

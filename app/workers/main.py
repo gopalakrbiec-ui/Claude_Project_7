@@ -12,14 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 def _redis_settings() -> RedisSettings:
+    from urllib.parse import urlparse
     settings = get_settings()
-    url = str(settings.redis_url)
-    parts = url.replace("redis://", "").split("/")
-    host_port = parts[0].split(":")
-    host = host_port[0]
-    port = int(host_port[1]) if len(host_port) > 1 else 6379
-    db = int(parts[1]) if len(parts) > 1 else 0
-    return RedisSettings(host=host, port=port, database=db)
+    parsed = urlparse(str(settings.redis_url))
+    return RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int(parsed.path.lstrip("/") or 0),
+        password=parsed.password or None,
+        ssl=parsed.scheme in ("rediss",),
+    )
 
 
 def _build_generation_providers(settings) -> tuple:

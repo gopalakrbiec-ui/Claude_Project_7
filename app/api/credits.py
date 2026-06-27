@@ -15,7 +15,7 @@ router = APIRouter(prefix="/credits", tags=["credits"])
 
 class BalanceOut(BaseModel):
     balance_paise: int
-    balance_rupees: float  # convenience field for display
+    balance_rupees: str  # e.g. "49.50" — string avoids float representation errors
 
 
 @router.get("/balance", response_model=BalanceOut)
@@ -25,7 +25,9 @@ async def get_balance(
 ) -> BalanceOut:
     """Return the authenticated user's current credit balance."""
     balance = await CreditsService(db).get_balance(current_user.id)
+    rupees = balance // 100
+    paise_remainder = balance % 100
     return BalanceOut(
         balance_paise=balance,
-        balance_rupees=round(balance / 100, 2),
+        balance_rupees=f"{rupees}.{paise_remainder:02d}",
     )

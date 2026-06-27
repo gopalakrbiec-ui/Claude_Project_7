@@ -47,20 +47,25 @@ class Msg91OtpAdapter:
         params = {
             "template_id": self._template_id,
             "mobile": mobile,
-            "authkey": self._auth_key,
             "otp": code,
             "sender": self._sender_id,
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.post(self._BASE_URL, params=params)
+                resp = await client.post(
+                    self._BASE_URL,
+                    params=params,
+                    headers={"authkey": self._auth_key},
+                )
                 resp.raise_for_status()
                 logger.info("MSG91 OTP sent to %s", phone)
             except httpx.HTTPStatusError as e:
                 logger.error("MSG91 OTP failed for %s: %s %s", phone, e.response.status_code, e.response.text)
+                raise RuntimeError(f"OTP delivery failed: {e.response.status_code}") from e
             except httpx.RequestError as e:
                 logger.error("MSG91 OTP network error for %s: %s", phone, e)
+                raise RuntimeError(f"OTP delivery network error: {e}") from e
 
 
 class TwilioOtpAdapter:
@@ -89,12 +94,14 @@ class TwilioOtpAdapter:
                     data={
                         "From": self._from_number,
                         "To": phone,
-                        "Body": f"Your WeddingApp OTP is {code}. Valid for 10 minutes.",
+                        "Body": f"Your WeddingApp OTP is {code}. Valid for 5 minutes.",
                     },
                 )
                 resp.raise_for_status()
                 logger.info("Twilio OTP sent to %s", phone)
             except httpx.HTTPStatusError as e:
                 logger.error("Twilio OTP failed for %s: %s %s", phone, e.response.status_code, e.response.text)
+                raise RuntimeError(f"OTP delivery failed: {e.response.status_code}") from e
             except httpx.RequestError as e:
                 logger.error("Twilio OTP network error for %s: %s", phone, e)
+                raise RuntimeError(f"OTP delivery network error: {e}") from e

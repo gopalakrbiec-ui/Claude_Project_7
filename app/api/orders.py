@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.core.queue import JobQueue, LoggingJobQueue
+from app.core.queue import ArqJobQueue, JobQueue, LoggingJobQueue
 from app.models.user import User
 from app.schemas.order import CreateOrderIn, OrderOut
 from app.services.credits import InsufficientBalanceError
@@ -15,13 +15,14 @@ from app.services.order import OrderService, TemplateNotFoundError
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-def _get_queue() -> JobQueue:
-    """
-    Returns the active job queue.
-
-    In production, replace with ArqJobQueue backed by a real arq Redis pool.
-    Wired via FastAPI dependency injection so tests can override it trivially.
-    """
+async def _get_queue() -> JobQueue:
+    from app.core.config import get_settings
+    settings = get_settings()
+    if settings.app_env in ("production", "staging"):
+        import arq
+        from arq.connections import RedisSettings
+        pool = await arq.create_pool(RedisSettings.from_dsn(str(settings.redis_url)))
+        return ArqJobQueue(pool)
     return LoggingJobQueue()
 
 

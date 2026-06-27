@@ -33,9 +33,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # In production, restrict CORS to known origins via ALLOWED_ORIGINS env var.
+    # For local dev / Railway preview, wildcard is acceptable.
+    allowed_origins = (
+        ["*"] if not settings.is_production
+        else [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # tighten per environment later
+        allow_origins=allowed_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )

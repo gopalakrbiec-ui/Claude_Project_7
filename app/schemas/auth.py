@@ -13,7 +13,7 @@ class RequestOtpOut(BaseModel):
 
 class VerifyOtpIn(BaseModel):
     phone: str = Field(..., min_length=10, max_length=20)
-    code: str = Field(..., min_length=4, max_length=8)
+    code: str = Field(..., min_length=6, max_length=6)
 
 
 class VerifyOtpOut(BaseModel):
