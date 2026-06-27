@@ -157,25 +157,28 @@ class AuthService:
         expire together, so a lockout is automatically lifted when the OTP
         would have expired anyway.
         """
-        # Increment attempt counter atomically BEFORE reading the code.
-        # This prevents a race where two parallel requests both read attempt=4
-        # and both proceed to check the code.
-        attempts = await self._redis.incr(_attempts_key(phone))
-        if attempts == 1:
-            # First attempt for this code window — set TTL on the counter.
-            await self._redis.expire(_attempts_key(phone), _OTP_TTL_SECONDS)
+        from app.core.config import get_settings
+        if get_settings().bypass_otp:
+            # Dev bypass: any phone + code "000000" logs in immediately.
+            if code != "000000":
+                raise InvalidOtpError("Bypass mode: use code 000000.")
+        else:
+            # Increment attempt counter atomically BEFORE reading the code.
+            attempts = await self._redis.incr(_attempts_key(phone))
+            if attempts == 1:
+                await self._redis.expire(_attempts_key(phone), _OTP_TTL_SECONDS)
 
-        if attempts > _OTP_ATTEMPT_LIMIT:
-            raise TooManyAttemptsError(
-                f"Too many OTP attempts for {phone}. Request a new code."
-            )
+            if attempts > _OTP_ATTEMPT_LIMIT:
+                raise TooManyAttemptsError(
+                    f"Too many OTP attempts for {phone}. Request a new code."
+                )
 
-        stored_code = await self._redis.get(_otp_key(phone))
-        if stored_code is None:
-            raise ExpiredOtpError(f"No active OTP for {phone}. Request a new code.")
+            stored_code = await self._redis.get(_otp_key(phone))
+            if stored_code is None:
+                raise ExpiredOtpError(f"No active OTP for {phone}. Request a new code.")
 
-        if stored_code != code:
-            raise InvalidOtpError("Incorrect OTP code.")
+            if stored_code != code:
+                raise InvalidOtpError("Incorrect OTP code.")
 
         # Code is correct — delete both keys immediately so the code cannot
         # be reused (replay protection).

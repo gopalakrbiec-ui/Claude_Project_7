@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # features before payments are wired. NEVER enable in production.
     bypass_payments: bool = Field(default=False)
 
+    # Set to true to accept any OTP code (use "000000") — for testing without SMS.
+    # NEVER enable in production.
+    bypass_otp: bool = Field(default=False)
+
     otp_provider: str = Field(default="console", description="console | msg91 | twilio")
     msg91_auth_key: str = Field(default="")
     msg91_template_id: str = Field(default="")
