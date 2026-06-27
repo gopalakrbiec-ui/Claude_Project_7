@@ -15,7 +15,7 @@ COPY . .
 
 # Railway injects $PORT at runtime; default to 8000 for local docker compose
 ENV PORT=8000
-PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1
 EXPOSE $PORT
 
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
