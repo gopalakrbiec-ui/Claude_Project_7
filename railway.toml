@@ -1,11 +1,7 @@
-# API service — start command is in Dockerfile CMD.
-# Worker service is configured via Railway UI with worker.dockerfile.
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
