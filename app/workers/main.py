@@ -61,6 +61,17 @@ def _build_generation_providers(settings) -> tuple:
         )
         return image_provider, video_provider
 
+    if provider == "pollinations":
+        from app.adapters.pollinations import PollinationsImageAdapter
+        from app.adapters.generation import FakeVideoGenerationAdapter
+
+        image_provider = PollinationsImageAdapter(
+            cost_paise=settings.gen_image_cost_paise,
+            timeout_seconds=settings.gen_image_timeout_seconds,
+        )
+        logger.info("Generation provider: pollinations.ai (free, no API key)")
+        return image_provider, FakeVideoGenerationAdapter()
+
     if provider == "composite":
         from app.adapters.generation import CompositeGenerationAdapter, FakeVideoGenerationAdapter
 

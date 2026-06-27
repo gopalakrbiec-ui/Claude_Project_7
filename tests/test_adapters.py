@@ -496,3 +496,50 @@ async def test_claude_prompt_adapter_timeout():
         adapter = ClaudePromptAdapter(api_key="test-key", timeout_seconds=0.05)
         with pytest.raises(HardTimeoutError):
             await adapter.build_prompt({}, language="hi")
+
+
+# ---------------------------------------------------------------------------
+# PollinationsImageAdapter tests
+# ---------------------------------------------------------------------------
+
+
+async def test_pollinations_image_adapter_happy_path():
+    image_bytes = b"\xff\xd8\xff fake jpeg"
+
+    with patch("httpx.AsyncClient") as mock_http_cls:
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = image_bytes
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        mock_http_cls.return_value = mock_http
+
+        from app.adapters.pollinations import PollinationsImageAdapter
+        adapter = PollinationsImageAdapter(cost_paise=0)
+        output = await adapter.generate("Beautiful floral wedding stage")
+
+    assert output.media_bytes == image_bytes
+    assert output.cost_paise == 0
+    assert output.provider_name == "pollinations.ai"
+    assert output.media_type == "image"
+    assert "pollinations" in output.model_id
+
+
+async def test_pollinations_image_adapter_http_error():
+    with patch("httpx.AsyncClient") as mock_http_cls:
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.text = "service unavailable"
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        mock_http_cls.return_value = mock_http
+
+        from app.adapters.pollinations import PollinationsImageAdapter
+        from app.core.retry import ProviderError
+        adapter = PollinationsImageAdapter()
+        with pytest.raises(ProviderError, match="503"):
+            await adapter.generate("Wedding stage")
