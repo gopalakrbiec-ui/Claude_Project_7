@@ -159,9 +159,8 @@ class AuthService:
         """
         from app.core.config import get_settings
         if get_settings().bypass_otp:
-            # Dev bypass: any phone + code "000000" logs in immediately.
-            if code != "000000":
-                raise InvalidOtpError("Bypass mode: use code 000000.")
+            # Dev bypass: any phone + any code logs in immediately — skip all OTP checks.
+            pass
         else:
             # Increment attempt counter atomically BEFORE reading the code.
             attempts = await self._redis.incr(_attempts_key(phone))
