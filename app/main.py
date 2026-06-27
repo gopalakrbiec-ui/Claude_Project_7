@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 
@@ -37,6 +39,22 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Safely serialize errors — binary fields in the request body can cause
+        # UnicodeDecodeError in FastAPI's default handler (e.g. image bytes in JSON).
+        def _safe(v: object) -> object:
+            if isinstance(v, bytes):
+                return f"<binary {len(v)} bytes>"
+            if isinstance(v, dict):
+                return {k: _safe(val) for k, val in v.items()}
+            if isinstance(v, list):
+                return [_safe(i) for i in v]
+            return v
+
+        errors = [_safe(e) for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
 
     # Routers
     from app.api.health import router as health_router

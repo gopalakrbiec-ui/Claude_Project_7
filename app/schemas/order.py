@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field
 
 class CreateOrderIn(BaseModel):
     template_id: int
-    input_payload: dict = Field(default_factory=dict)
+    # input_payload is free-form metadata: names, dates, language, theme, media_type.
+    # Images must be uploaded separately and referenced by URL or storage key — never
+    # embed raw bytes here.
+    input_payload: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
     # Client generates this UUID to make double-taps idempotent.
     idempotency_key: str = Field(..., min_length=8, max_length=128)
 
