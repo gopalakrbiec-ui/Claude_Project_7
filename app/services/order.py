@@ -100,15 +100,15 @@ class OrderService:
         # between the check and the debit.
 
         try:
-            # Step 1 + 2: acquire lock and check balance before any writes
-            # We call _credits._repo.acquire_user_lock() explicitly so the lock
-            # is held for the entire create_order transaction, preventing a
-            # parallel request from passing the balance check between our check
-            # and our order INSERT.
-            await self._credits._repo.acquire_user_lock(user_id)
-            balance = await self._credits.get_balance(user_id)
-            if balance < price_paise:
-                raise InsufficientBalanceError(user_id, balance, price_paise)
+            from app.core.config import get_settings
+            bypass = get_settings().bypass_payments
+
+            if not bypass:
+                # Step 1 + 2: acquire lock and check balance before any writes
+                await self._credits._repo.acquire_user_lock(user_id)
+                balance = await self._credits.get_balance(user_id)
+                if balance < price_paise:
+                    raise InsufficientBalanceError(user_id, balance, price_paise)
 
             # Step 3: insert order row (status=queued)
             order = await self._order_repo.create(
@@ -119,17 +119,17 @@ class OrderService:
                 idempotency_key=idempotency_key,
             )
 
-            # Step 4: debit — advisory lock is already held; idempotency_key is
-            # stable across retries because it encodes the order's primary key.
-            await self._credits.debit(
-                user_id=user_id,
-                delta_paise=price_paise,
-                reason=LedgerReason.spend,
-                ref=LedgerRef(ref_type="order", ref_id=order.id),
-                idempotency_key=f"debit:order:{order.id}",
-            )
+            if not bypass:
+                # Step 4: debit — advisory lock is already held
+                await self._credits.debit(
+                    user_id=user_id,
+                    delta_paise=price_paise,
+                    reason=LedgerReason.spend,
+                    ref=LedgerRef(ref_type="order", ref_id=order.id),
+                    idempotency_key=f"debit:order:{order.id}",
+                )
 
-            # Step 5: commit — order row and ledger entry land atomically.
+            # Step 5: commit — order row (and optional ledger entry) land atomically.
             await self._session.commit()
 
         except IntegrityError:

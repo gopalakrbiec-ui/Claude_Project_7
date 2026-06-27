@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     # OTP / SMS delivery
     # otp_provider: console (dev) | msg91 (production)
     # ------------------------------------------------------------------
+    # Set to true to skip credit balance checks — for testing template/generation
+    # features before payments are wired. NEVER enable in production.
+    bypass_payments: bool = Field(default=False)
+
     otp_provider: str = Field(default="console", description="console | msg91 | twilio")
     msg91_auth_key: str = Field(default="")
     msg91_template_id: str = Field(default="")

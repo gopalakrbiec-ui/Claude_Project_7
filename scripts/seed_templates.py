@@ -18,15 +18,16 @@ DATABASE_URL = (
     .replace("postgres://", "postgresql+asyncpg://", 1)
 )
 
-# Preview images from Unsplash (free, no API key needed for direct URLs)
 TEMPLATES = [
+    # ── Wedding ───────────────────────────────────────────────────────────────
     {
         "name": "Floral Wedding Invite",
         "language": "hi",
         "theme": "floral",
         "base_price_paise": 2900,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=400&q=80",
+            "description": "Elegant floral border wedding invitation with pink and gold tones",
         }),
     },
     {
@@ -35,7 +36,8 @@ TEMPLATES = [
         "theme": "classic",
         "base_price_paise": 1900,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=400&q=80",
+            "description": "Timeless white and gold wedding invitation with couple silhouette",
         }),
     },
     {
@@ -44,52 +46,84 @@ TEMPLATES = [
         "theme": "royal",
         "base_price_paise": 4900,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1606800052052-a08af7148866?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1606800052052-a08af7148866?w=400&q=80",
+            "description": "Royal Rajasthani-style wedding card with deep red and gold embellishments",
         }),
     },
     {
-        "name": "Floral Wedding Invite",
-        "language": "en",
-        "theme": "floral",
-        "base_price_paise": 2900,
+        "name": "Garden Wedding Invite",
+        "language": "hi",
+        "theme": "garden",
+        "base_price_paise": 2500,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=400&q=80",
+            "description": "Fresh garden wedding invite with green leaves and white flowers",
         }),
     },
     {
-        "name": "Classic Wedding Invite",
-        "language": "en",
-        "theme": "classic",
-        "base_price_paise": 1900,
+        "name": "Mandap Wedding Invite",
+        "language": "hi",
+        "theme": "traditional",
+        "base_price_paise": 3500,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1583089892943-e02e5b017b6a?w=400&q=80",
+            "description": "Traditional Indian mandap ceremony invitation with marigold and diyas",
         }),
     },
-    {
-        "name": "పూల పెళ్లి ఆహ్వానం",
-        "language": "te",
-        "theme": "floral",
-        "base_price_paise": 2900,
-        "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=400&q=80"
-        }),
-    },
+
+    # ── Birthday ──────────────────────────────────────────────────────────────
     {
         "name": "Birthday Celebration",
         "language": "hi",
         "theme": "birthday",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=400&q=80",
+            "description": "Colourful birthday celebration card with balloons and confetti",
         }),
     },
+    {
+        "name": "Kids Birthday Party",
+        "language": "hi",
+        "theme": "kids-birthday",
+        "base_price_paise": 1500,
+        "asset_keys": json.dumps({
+            "preview_url": "https://images.unsplash.com/photo-1530103862676-de8c9debad1d?w=400&q=80",
+            "description": "Fun and bright kids birthday party invite with cartoon theme",
+        }),
+    },
+
+    # ── Baby & Family ─────────────────────────────────────────────────────────
     {
         "name": "Baby Shower",
         "language": "hi",
         "theme": "babyshower",
         "base_price_paise": 1500,
         "asset_keys": json.dumps({
-            "preview_url": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=400&q=80"
+            "preview_url": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=400&q=80",
+            "description": "Soft pastel baby shower invite with cute baby elements",
+        }),
+    },
+    {
+        "name": "Naming Ceremony",
+        "language": "hi",
+        "theme": "naming-ceremony",
+        "base_price_paise": 1500,
+        "asset_keys": json.dumps({
+            "preview_url": "https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=400&q=80",
+            "description": "Sweet namkaran/naming ceremony invite with baby footprints and flowers",
+        }),
+    },
+
+    # ── Other Events ──────────────────────────────────────────────────────────
+    {
+        "name": "Housewarming Invite",
+        "language": "hi",
+        "theme": "housewarming",
+        "base_price_paise": 1500,
+        "asset_keys": json.dumps({
+            "preview_url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&q=80",
+            "description": "Warm griha pravesh / housewarming invitation with home and diyas",
         }),
     },
 ]
@@ -100,7 +134,6 @@ async def seed() -> None:
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with factory() as session:
-        # Clear existing templates and re-seed with images
         await session.execute(text("DELETE FROM templates"))
         for t in TEMPLATES:
             await session.execute(
@@ -111,7 +144,7 @@ async def seed() -> None:
                 t,
             )
         await session.commit()
-        print(f"Seeded {len(TEMPLATES)} templates with preview images.")
+        print(f"Seeded {len(TEMPLATES)} templates.")
 
     await engine.dispose()
 
