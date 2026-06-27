@@ -8,11 +8,3 @@ healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
-
-[services.worker]
-[services.worker.build]
-dockerfilePath = "worker.dockerfile"
-
-[services.worker.deploy]
-startCommand = ""
-healthcheckPath = ""
