@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # features before payments are wired. NEVER enable in production.
     bypass_payments: bool = Field(default=False)
 
+    # Set to true to skip content moderation — for testing generation without
+    # Anthropic API key. NEVER enable in production.
+    bypass_moderation: bool = Field(default=False)
+
     # Set to true to accept any OTP code (use "000000") — for testing without SMS.
     # NEVER enable in production.
     bypass_otp: bool = Field(default=False)
@@ -142,6 +146,8 @@ class Settings(BaseSettings):
                 raise ValueError("bypass_otp must not be enabled in production")
             if self.bypass_payments:
                 raise ValueError("bypass_payments must not be enabled in production")
+            if self.bypass_moderation:
+                raise ValueError("bypass_moderation must not be enabled in production")
             if not self.razorpay_webhook_secret:
                 raise ValueError("RAZORPAY_WEBHOOK_SECRET is required in production")
         return self

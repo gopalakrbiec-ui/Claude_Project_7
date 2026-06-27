@@ -73,6 +73,12 @@ async def run_moderation(
     await order_repo.update_status(order.id, OrderStatus.moderating)
     await session.commit()
 
+    from app.core.config import get_settings
+    if get_settings().bypass_moderation:
+        logger.warning("Moderation bypassed for order %s (bypass_moderation=true)", order.id)
+        await job_repo.set_moderation_result(job_id, {"bypassed": True})
+        return True
+
     content = _payload_to_text(order.input_payload)
     result = await moderation_adapter.moderate(content)
 
