@@ -47,10 +47,13 @@ DATABASE_URL = (
 FAL_API_KEY = os.environ.get("FAL_API_KEY") or os.environ.get("GEN_PROVIDER_API_KEY", "")
 os.environ["FAL_KEY"] = FAL_API_KEY
 
-S3_ENDPOINT = os.environ.get("S3_ENDPOINT_URL", "")
-S3_KEY_ID   = os.environ.get("S3_ACCESS_KEY_ID", "")
-S3_SECRET   = os.environ.get("S3_SECRET_ACCESS_KEY", "")
-S3_BUCKET   = os.environ.get("S3_BUCKET_NAME", "weddingapp")
+S3_ENDPOINT   = os.environ.get("S3_ENDPOINT_URL", "")
+S3_KEY_ID     = os.environ.get("S3_ACCESS_KEY_ID", "")
+S3_SECRET     = os.environ.get("S3_SECRET_ACCESS_KEY", "")
+S3_BUCKET     = os.environ.get("S3_BUCKET_NAME", "weddingapp")
+# Public R2 domain — set this so template image_urls are publicly accessible in Flutter
+# Find it in Cloudflare R2 dashboard → bucket → Settings → Public access
+R2_PUBLIC_BASE = os.environ.get("R2_PUBLIC_BASE", "").rstrip("/")
 
 _MODEL = "fal-ai/flux/dev"
 _W, _H  = 768, 1024   # portrait — best for InstantID style reference
@@ -367,10 +370,10 @@ def upload_to_r2(key: str, data: bytes) -> str:
         Key=key,
         Body=data,
         ContentType="image/png",
-        # Public read so Flutter can display without presigning
-        ACL="public-read",
     )
-    # Return public URL
+    # Use public R2 domain if set, otherwise fall back to endpoint URL
+    if R2_PUBLIC_BASE:
+        return f"{R2_PUBLIC_BASE}/{key}"
     endpoint = S3_ENDPOINT.rstrip("/")
     return f"{endpoint}/{S3_BUCKET}/{key}"
 
