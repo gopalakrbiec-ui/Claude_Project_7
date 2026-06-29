@@ -109,13 +109,24 @@ async def run_build_prompt(
     order: Order,
     *,
     claude_adapter: ClaudeAdapter,
+    template_scene: str | None = None,
 ) -> PromptResult:
     """
     Turn vernacular customer input into a clean generation prompt + caption copy.
+    Merges template scene_description with user_prompt when available.
     Pure network call — no DB writes.
     """
-    language = order.input_payload.get("language", "hi")
-    return await claude_adapter.build_prompt(order.input_payload, language)
+    payload = dict(order.input_payload)
+
+    # Merge new-style fields into payload for Claude
+    user_prompt = payload.pop("user_prompt", None)
+    if user_prompt:
+        payload["user_prompt"] = user_prompt
+    if template_scene:
+        payload["scene_description"] = template_scene
+
+    language = payload.get("language", "hi")
+    return await claude_adapter.build_prompt(payload, language)
 
 
 async def run_generate(
@@ -125,9 +136,14 @@ async def run_generate(
     *,
     session: AsyncSession,
     generation_provider: GenerationProvider,
+    template_image_url: str | None = None,
+    face_image_url: str | None = None,
+    aspect_ratio: str = "9:16",
 ) -> GenerationOutput:
     """
     Call the generation provider and record cost + provider on the job row.
+    When face_image_url is present and the provider supports InstantID,
+    generates a face-accurate portrait placed in the template scene.
     Fires the cost-logging hook after every successful call.
     """
     job_repo = GenerationJobRepository(session)
@@ -138,7 +154,19 @@ async def run_generate(
     await session.commit()
 
     t0 = time.monotonic()
-    output = await generation_provider.generate(prompt_result.generation_prompt)
+
+    # If provider supports face-in-scene and user uploaded a photo, use it
+    from app.adapters.instantid import InstantIDAdapter
+    if face_image_url and isinstance(generation_provider, InstantIDAdapter):
+        output = await generation_provider.generate_with_face(
+            prompt=prompt_result.generation_prompt,
+            face_image_url=face_image_url,
+            style_image_url=template_image_url,
+            aspect_ratio=aspect_ratio,
+        )
+    else:
+        output = await generation_provider.generate(prompt_result.generation_prompt)
+
     duration_ms = int((time.monotonic() - t0) * 1000)
 
     # Record provider name and cost (cost_paise is always integer, never float)
@@ -168,12 +196,66 @@ async def run_generate(
 
 async def run_watermark(output: GenerationOutput) -> bytes:
     """
-    Stamp a preview watermark on generated output.
+    Stamp the Yadein brand watermark on the bottom-centre of the image.
     Pure bytes transform — no DB writes, no external calls.
-    Stub — real compositing wired in a future PR.
+    Video output is returned unchanged (watermark via ffmpeg is a future task).
     """
-    # TODO: overlay brand watermark using Pillow (image) or ffmpeg (video)
-    return output.media_bytes
+    if output.media_type == "video":
+        return output.media_bytes
+
+    import asyncio
+    return await asyncio.to_thread(_apply_watermark, output.media_bytes)
+
+
+def _apply_watermark(image_bytes: bytes) -> bytes:
+    """
+    Overlay a semi-transparent 'Yadein ✨' pill at the bottom-centre.
+    Uses Pillow — runs in a thread pool to avoid blocking the event loop.
+    """
+    try:
+        import io
+        from PIL import Image, ImageDraw, ImageFont
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+        w, h = img.size
+
+        # Watermark text and sizing
+        text = "✨ Yadein"
+        font_size = max(24, h // 28)
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        except OSError:
+            font = ImageFont.load_default()
+
+        # Measure text
+        dummy = Image.new("RGBA", (1, 1))
+        draw_dummy = ImageDraw.Draw(dummy)
+        bbox = draw_dummy.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Draw pill background
+        pad_x, pad_y = 20, 10
+        pill_w, pill_h = tw + pad_x * 2, th + pad_y * 2
+        pill_x = (w - pill_w) // 2
+        pill_y = h - pill_h - max(20, h // 30)
+
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        draw.rounded_rectangle(
+            [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
+            radius=pill_h // 2,
+            fill=(0, 0, 0, 140),
+        )
+        draw.text((pill_x + pad_x, pill_y + pad_y), text, font=font, fill=(255, 255, 255, 230))
+
+        composited = Image.alpha_composite(img, overlay).convert("RGB")
+        out = io.BytesIO()
+        composited.save(out, format="JPEG", quality=95)
+        return out.getvalue()
+
+    except Exception:
+        logger.warning("Watermark failed — returning original bytes", exc_info=True)
+        return image_bytes
 
 
 async def run_upload(

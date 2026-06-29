@@ -28,9 +28,11 @@ def _build_generation_providers(settings) -> tuple:
     """
     Return (image_provider, video_provider) based on GEN_PROVIDER config.
 
-    GEN_PROVIDER=stub     → FakeGenerationAdapter (both paths)
-    GEN_PROVIDER=composite → CompositeGenerationAdapter (image), stub (video)
-    GEN_PROVIDER=fal      → FalImageAdapter + FalVideoAdapter (real API calls)
+    GEN_PROVIDER=stub        → FakeGenerationAdapter (both paths)
+    GEN_PROVIDER=composite   → CompositeGenerationAdapter (image), stub (video)
+    GEN_PROVIDER=fal         → FalImageAdapter + FalVideoAdapter (real API calls)
+    GEN_PROVIDER=instantid   → InstantIDAdapter (face-in-scene) + FalVideoAdapter
+    GEN_PROVIDER=pollinations → PollinationsImageAdapter (free, no key)
 
     Swapping providers never touches business logic — only this function
     and .env need to change.
@@ -59,6 +61,28 @@ def _build_generation_providers(settings) -> tuple:
             settings.gen_image_model,
             settings.gen_video_model,
         )
+        return image_provider, video_provider
+
+    if provider == "instantid":
+        from app.adapters.instantid import InstantIDAdapter
+        from app.adapters.fal import FalVideoAdapter
+        from app.adapters.generation import FakeVideoGenerationAdapter
+
+        image_provider = InstantIDAdapter(
+            api_key=settings.gen_provider_api_key,
+            cost_paise=settings.gen_image_cost_paise,
+            timeout_seconds=settings.gen_image_timeout_seconds,
+        )
+        try:
+            video_provider = FalVideoAdapter(
+                api_key=settings.gen_provider_api_key,
+                model_id=settings.gen_video_model,
+                cost_paise=settings.gen_video_cost_paise,
+                timeout_seconds=settings.gen_video_timeout_seconds,
+            )
+        except Exception:
+            video_provider = FakeVideoGenerationAdapter()
+        logger.info("Generation provider: fal.ai/instantid (face-in-scene)")
         return image_provider, video_provider
 
     if provider == "pollinations":

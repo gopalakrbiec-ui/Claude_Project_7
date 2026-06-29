@@ -77,18 +77,34 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
         # Re-fetch order after commit so we have the latest status
         await session.refresh(order)
 
-        # ── Step 2: Build prompt ──────────────────────────────────────────────
+        # ── Step 2: Resolve template metadata ────────────────────────────────
+        from app.repositories.template import TemplateRepository
+        template_repo = TemplateRepository(session)
+        template = await template_repo.get_active(order.template_id)
+        template_image_url: str | None = template.image_url if template else None
+        template_scene: str | None = template.scene_description if template else None
+
+        # Resolve user photo to a presigned URL the model can fetch
+        face_image_url: str | None = None
+        user_photo_key = order.input_payload.get("user_photo_key")
+        if user_photo_key:
+            storage = ctx.get("storage_adapter")
+            from app.adapters.storage import S3StorageAdapter
+            if isinstance(storage, S3StorageAdapter):
+                face_image_url = storage.presign(user_photo_key, expires_in=900)
+
+        aspect_ratio: str = order.input_payload.get("aspect_ratio", "9:16")
+
+        # ── Step 3: Build prompt ──────────────────────────────────────────────
         prompt_result = await run_build_prompt(
             order,
             claude_adapter=ctx["claude_adapter"],
+            template_scene=template_scene,
         )
 
-        # ── Step 3: Generate ──────────────────────────────────────────────────
-        # Select image or video provider based on the order's requested media type.
-        # The order's input_payload carries "media_type": "image"|"video"; default image.
+        # ── Step 4: Generate ──────────────────────────────────────────────────
         media_type = order.input_payload.get("media_type", "image")
         provider_key = "video_provider" if media_type == "video" else "image_provider"
-        # Fall back to legacy "generation_provider" key for backward compat
         generation_provider = ctx.get(provider_key) or ctx["generation_provider"]
 
         gen_output = await run_generate(
@@ -97,12 +113,15 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
             prompt_result,
             session=session,
             generation_provider=generation_provider,
+            template_image_url=template_image_url,
+            face_image_url=face_image_url,
+            aspect_ratio=aspect_ratio,
         )
 
-        # ── Step 4: Watermark ─────────────────────────────────────────────────
+        # ── Step 5: Watermark ─────────────────────────────────────────────────
         watermarked = await run_watermark(gen_output)
 
-        # ── Step 5: Upload + commission — single atomic commit ────────────────
+        # ── Step 6: Upload + commission — single atomic commit ────────────────
         #
         # commit=False defers the DB commit so we can include the commission
         # ledger row in the same transaction as order.status=done.

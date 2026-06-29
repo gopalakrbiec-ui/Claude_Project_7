@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     gen_provider: str = Field(
         default="stub",
-        description="Which generation adapter to use: stub | fal | composite | pollinations",
+        description="Which generation adapter to use: stub | fal | instantid | composite | pollinations",
     )
     gen_provider_api_key: str = Field(default="")
 

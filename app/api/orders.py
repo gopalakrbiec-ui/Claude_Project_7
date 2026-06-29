@@ -46,10 +46,18 @@ async def create_order(
     svc: Annotated[OrderService, Depends(_get_order_service)],
 ) -> OrderOut:
     try:
+        # Merge top-level new fields into input_payload so workers can read them
+        payload = dict(body.input_payload)
+        if body.user_photo_key:
+            payload["user_photo_key"] = body.user_photo_key
+        if body.user_prompt:
+            payload["user_prompt"] = body.user_prompt
+        payload["aspect_ratio"] = body.aspect_ratio
+
         order = await svc.create_order(
             user_id=current_user.id,
             template_id=body.template_id,
-            input_payload=body.input_payload,
+            input_payload=payload,
             idempotency_key=body.idempotency_key,
         )
     except TemplateNotFoundError as exc:

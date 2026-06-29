@@ -21,6 +21,7 @@ class TemplateRepository:
         *,
         language: str | None = None,
         theme: str | None = None,
+        category: str | None = None,
         limit: int = 50,
     ) -> list[Template]:
         q = select(Template).where(Template.active.is_(True))
@@ -28,6 +29,8 @@ class TemplateRepository:
             q = q.where(Template.language == language)
         if theme:
             q = q.where(Template.theme == theme)
+        if category:
+            q = q.where(Template.category == category)
         q = q.order_by(Template.id).limit(limit)
         result = await self._session.execute(q)
         return list(result.scalars().all())

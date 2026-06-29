@@ -16,15 +16,15 @@ router = APIRouter(prefix="/templates", tags=["templates"])
 
 @router.get("", response_model=list[TemplateOut])
 async def list_templates(
-    language: Annotated[str | None, Query(description="Filter by language code, e.g. hi, en, te")] = None,
-    theme: Annotated[str | None, Query(description="Filter by theme, e.g. floral, classic")] = None,
+    category: Annotated[str | None, Query(description="Filter by category, e.g. wedding, birthday, festival")] = None,
+    theme: Annotated[str | None, Query(description="Filter by theme, e.g. floral, royal")] = None,
     db: AsyncSession = Depends(get_db),
 ) -> list[TemplateOut]:
-    """List active templates, optionally filtered by language and/or theme."""
+    """List active templates, optionally filtered by category and/or theme."""
     try:
         repo = TemplateRepository(db)
-        templates = await repo.list_active(language=language, theme=theme)
-        return [TemplateOut.from_orm_with_preview(t) for t in templates]
+        templates = await repo.list_active(category=category, theme=theme)
+        return [TemplateOut.model_validate(t) for t in templates]
     except Exception:
         logger.exception("Failed to fetch templates")
         return []
