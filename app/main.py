@@ -27,7 +27,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="WeddingApp Backend",
         description="AI-generated wedding & life-event content for rural India.",
-        version="0.1.1",
+        version="0.1.2",
         docs_url="/docs" if settings.debug else None,
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
