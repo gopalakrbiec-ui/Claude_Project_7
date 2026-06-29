@@ -17,9 +17,9 @@ from app.core.retry import ProviderError, with_timeout
 
 logger = logging.getLogger(__name__)
 
-_RESTORE_MODEL = "fal-ai/photo-restoration"
-_BG_REMOVE_MODEL = "fal-ai/birefnet"
-_UPSCALE_MODEL = "fal-ai/real-esrgan"
+_RESTORE_MODEL = "fal-ai/gfpgan"         # face restore + enhance
+_BG_REMOVE_MODEL = "fal-ai/birefnet"    # background removal (confirmed working)
+_UPSCALE_MODEL = "fal-ai/aura-sr"       # 4x upscaler (confirmed working)
 
 
 def _set_fal_key(api_key: str) -> None:
@@ -54,9 +54,14 @@ class PhotoRestoreAdapter:
                 arguments={"image_url": image_url},
             )
             result = await handler.get()
-            out_url = (result.get("image") or {}).get("url") or result.get("url")
+            # gfpgan returns {"output": "url"} or {"image": {"url": ...}}
+            out_url = (
+                result.get("output")
+                or (result.get("image") or {}).get("url")
+                or result.get("url")
+            )
             if not out_url:
-                raise ProviderError(f"photo-restore: no image URL in result: {result}")
+                raise ProviderError(f"gfpgan: no image URL in result: {result}")
             return await _download(out_url), self._cost_paise
 
         return await with_timeout(_run(), seconds=self._timeout_seconds, label="PhotoRestoreAdapter")
@@ -101,17 +106,17 @@ class PhotoUpscaleAdapter:
         self._timeout_seconds = timeout_seconds
 
     async def upscale(self, *, image_url: str, scale: int = 4) -> tuple[bytes, int]:
-        """Returns (upscaled_image_bytes, cost_paise)."""
+        """Returns (upscaled_image_bytes, cost_paise). scale param kept for API compat."""
         async def _run() -> tuple[bytes, int]:
-            logger.info("PhotoUpscaleAdapter: submitting upscale scale=%d", scale)
+            logger.info("PhotoUpscaleAdapter: submitting upscale via aura-sr")
             handler = await fal_client.submit_async(
                 _UPSCALE_MODEL,
-                arguments={"image_url": image_url, "scale": scale},
+                arguments={"image_url": image_url},
             )
             result = await handler.get()
             out_url = (result.get("image") or {}).get("url") or result.get("url")
             if not out_url:
-                raise ProviderError(f"real-esrgan: no image URL in result: {result}")
+                raise ProviderError(f"aura-sr: no image URL in result: {result}")
             return await _download(out_url), self._cost_paise
 
         return await with_timeout(_run(), seconds=self._timeout_seconds, label="PhotoUpscaleAdapter")

@@ -20,12 +20,12 @@ from app.core.retry import ProviderError, with_timeout
 
 logger = logging.getLogger(__name__)
 
-_STYLE_TRANSFER_MODEL = "fal-ai/flux/dev/image-to-image"
-_TRYON_MODEL = "fal-ai/cat-vton"
-_HAIR_MODEL = "fal-ai/hair-fast-gan"
-_BG_REPLACE_MODEL = "fal-ai/bria-background-replace"
-_REMIX_MODEL = "fal-ai/flux/dev/image-to-image"
-_TEXT2IMG_MODEL = "fal-ai/flux/schnell"
+_STYLE_TRANSFER_MODEL = "fal-ai/flux/dev/image-to-image"   # confirmed working
+_TRYON_MODEL = "fal-ai/cat-vton"                           # confirmed working
+_HAIR_MODEL = "fal-ai/hairfast"                            # correct slug (no dash-gan)
+_BG_REPLACE_MODEL = "fal-ai/bria/background-replace"      # correct slug with slash
+_REMIX_MODEL = "fal-ai/flux/dev/image-to-image"           # confirmed working
+_TEXT2IMG_MODEL = "fal-ai/flux/schnell"                   # confirmed working
 
 
 def _set_fal_key(api_key: str) -> None:
