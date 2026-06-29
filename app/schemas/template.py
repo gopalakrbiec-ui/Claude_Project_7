@@ -4,7 +4,11 @@ from pydantic import BaseModel, model_validator
 
 _CATEGORY_LABELS: dict[str, str] = {
     "wedding": "Wedding",
+    "bollywood": "Bollywood",
+    "cricket": "Cricket Glory",
+    "royal": "Royal India",
     "birthday": "Birthday",
+    "professional": "Professional",
     "festival": "Festival",
     "fashion": "Fashion",
     "family": "Family",

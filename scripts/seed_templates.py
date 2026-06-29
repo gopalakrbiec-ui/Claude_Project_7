@@ -229,6 +229,175 @@ TEMPLATES = [
         ),
         "base_price_paise": 1500,
     },
+
+    # ── Bollywood ─────────────────────────────────────────────────────────────
+    {
+        "name": "Bollywood Diva",
+        "category": "bollywood",
+        "theme": "diva",
+        "is_featured": True,
+        "image_url": "https://images.unsplash.com/photo-1610450949065-1f2841536c88?w=600&q=85",
+        "scene_description": (
+            "Glamorous Bollywood heroine pose — heavy dramatic makeup, sequined lehenga, "
+            "standing in front of a grand film studio set with spotlights. "
+            "Cinematic 8K photography, vibrant colours, movie-poster style."
+        ),
+        "base_price_paise": 3900,
+    },
+    {
+        "name": "Retro Bollywood Portrait",
+        "category": "bollywood",
+        "theme": "retro",
+        "is_featured": True,
+        "image_url": "https://images.unsplash.com/photo-1583337130417-3346a1be7dee?w=600&q=85",
+        "scene_description": (
+            "1970s retro Bollywood portrait — film-grain texture, warm sepia tones, "
+            "subject in vintage ethnic dress, classic film-set backdrop. "
+            "Stylised as an old Filmfare magazine cover."
+        ),
+        "base_price_paise": 3500,
+    },
+    {
+        "name": "Bollywood Hero",
+        "category": "bollywood",
+        "theme": "hero",
+        "image_url": "https://images.unsplash.com/photo-1607346256330-dee7af15f7c5?w=600&q=85",
+        "scene_description": (
+            "Action-hero Bollywood pose — man in stylish sherwani or suit, dramatic back-lighting, "
+            "slow-motion effect, grand palace staircase backdrop. "
+            "Cinematic widescreen, 8K DSLR, movie-poster composition."
+        ),
+        "base_price_paise": 3500,
+    },
+    {
+        "name": "Punjabi Bride",
+        "category": "bollywood",
+        "theme": "punjabi-bride",
+        "image_url": "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600&q=85",
+        "scene_description": (
+            "Punjabi bride in vibrant pink and red phulkari dupatta, heavy gold jewellery, "
+            "kalire on wrists, standing in a mustard field at golden hour. "
+            "8K DSLR wedding photography, Bollywood colour grade."
+        ),
+        "base_price_paise": 4500,
+    },
+
+    # ── Cricket ───────────────────────────────────────────────────────────────
+    {
+        "name": "Cricket Glory",
+        "category": "cricket",
+        "theme": "glory",
+        "is_featured": True,
+        "image_url": "https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=600&q=85",
+        "scene_description": (
+            "Indian cricketer in full blue jersey holding a bat, celebrating a century, "
+            "stadium crowd roaring in the background, confetti falling. "
+            "Action 8K sports photography, dramatic stadium lighting."
+        ),
+        "base_price_paise": 2900,
+    },
+    {
+        "name": "Stadium Champion",
+        "category": "cricket",
+        "theme": "champion",
+        "image_url": "https://images.unsplash.com/photo-1624526267942-ab0ff8a3e972?w=600&q=85",
+        "scene_description": (
+            "Cricketer lifting the World Cup trophy in Team India jersey, "
+            "fireworks exploding over the stadium, teammates celebrating behind. "
+            "Epic 8K sports photography, golden hour, ultra-wide lens."
+        ),
+        "base_price_paise": 3500,
+    },
+    {
+        "name": "Street Cricket Star",
+        "category": "cricket",
+        "theme": "street",
+        "image_url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=85",
+        "scene_description": (
+            "Young cricketer on a dusty street pitch, bright afternoon sun, "
+            "gully cricket setting with makeshift wickets, joy and passion on face. "
+            "Documentary-style 8K photography, warm Indian summer light."
+        ),
+        "base_price_paise": 1900,
+    },
+
+    # ── Royal India ───────────────────────────────────────────────────────────
+    {
+        "name": "Royal India Maharaja",
+        "category": "royal",
+        "theme": "maharaja",
+        "is_featured": True,
+        "image_url": "https://images.unsplash.com/photo-1599661046289-e31897846e41?w=600&q=85",
+        "scene_description": (
+            "Maharaja seated on an ornate gold and ruby throne in a Rajasthani palace — "
+            "wearing a jewelled turban, silk achkan, and pearl necklace. "
+            "Regal oil-painting lighting, 8K, Mughal-era grandeur."
+        ),
+        "base_price_paise": 5900,
+    },
+    {
+        "name": "Royal Maharani",
+        "category": "royal",
+        "theme": "maharani",
+        "image_url": "https://images.unsplash.com/photo-1583089892943-e02e5b017b6a?w=600&q=85",
+        "scene_description": (
+            "Maharani in a silk Banarasi saree with Kundan jewellery, standing in a palace "
+            "zenana with intricate jali screens and marigold garlands. "
+            "Royal portrait, 8K DSLR, Mughal miniature painting colour palette."
+        ),
+        "base_price_paise": 5900,
+    },
+    {
+        "name": "Rajput Warrior",
+        "category": "royal",
+        "theme": "warrior",
+        "image_url": "https://images.unsplash.com/photo-1594736797933-d0501ba2fe65?w=600&q=85",
+        "scene_description": (
+            "Rajput warrior in full armour with a sword, standing on a fort rampart at dusk, "
+            "Aravalli hills in the background. "
+            "Epic cinematic 8K photography, dramatic golden-red sky."
+        ),
+        "base_price_paise": 4900,
+    },
+
+    # ── Professional / LinkedIn ───────────────────────────────────────────────
+    {
+        "name": "LinkedIn Pro",
+        "category": "professional",
+        "theme": "linkedin",
+        "is_featured": True,
+        "image_url": "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=600&q=85",
+        "scene_description": (
+            "Confident professional in business formal attire — crisp white shirt or saree blouse — "
+            "neutral studio background with soft bokeh. "
+            "Corporate headshot, 8K DSLR, LinkedIn profile photo style."
+        ),
+        "base_price_paise": 1500,
+    },
+    {
+        "name": "Startup Founder",
+        "category": "professional",
+        "theme": "startup",
+        "image_url": "https://images.unsplash.com/photo-1551434678-e076c223a692?w=600&q=85",
+        "scene_description": (
+            "Ambitious startup founder in smart-casual (blazer over t-shirt) in a modern "
+            "co-working space with laptops and whiteboards. "
+            "Candid 8K corporate photography, entrepreneurial energy."
+        ),
+        "base_price_paise": 1500,
+    },
+    {
+        "name": "Campus Yearbook",
+        "category": "professional",
+        "theme": "yearbook",
+        "image_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=600&q=85",
+        "scene_description": (
+            "College student in graduation gown holding diploma, smiling proudly on campus. "
+            "Soft natural light, campus greenery in background. "
+            "Classic 8K yearbook portrait, warm celebratory atmosphere."
+        ),
+        "base_price_paise": 1500,
+    },
 ]
 
 
