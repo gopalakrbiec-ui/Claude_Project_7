@@ -24,6 +24,7 @@ class OrderOut(BaseModel):
     id: int
     user_id: int
     template_id: int
+    template_name: str | None = None  # populated by list endpoint
     price_paise: int
     status: str
     input_payload: dict
@@ -31,3 +32,10 @@ class OrderOut(BaseModel):
     result_url: str | None = None  # presigned URL populated by GET /orders/{id}
 
     model_config = {"from_attributes": True}
+
+
+class OrderListOut(BaseModel):
+    orders: list[OrderOut]
+    total: int
+    page: int
+    limit: int

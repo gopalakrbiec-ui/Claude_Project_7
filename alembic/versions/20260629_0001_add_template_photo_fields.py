@@ -21,6 +21,7 @@ def upgrade() -> None:
     op.add_column('templates', sa.Column('category', sa.String(length=100), nullable=True))
     op.add_column('templates', sa.Column('image_url', sa.String(length=500), nullable=True))
     op.add_column('templates', sa.Column('scene_description', sa.String(length=1000), nullable=True))
+    op.add_column('templates', sa.Column('is_featured', sa.Boolean(), nullable=False, server_default='false'))
 
     # Backfill category from theme for existing rows
     op.execute("UPDATE templates SET category = theme WHERE category IS NULL")
@@ -28,10 +29,13 @@ def upgrade() -> None:
     # Make category non-nullable after backfill
     op.alter_column('templates', 'category', nullable=False)
     op.create_index('ix_templates_category', 'templates', ['category'])
+    op.create_index('ix_templates_is_featured', 'templates', ['is_featured'])
 
 
 def downgrade() -> None:
+    op.drop_index('ix_templates_is_featured', table_name='templates')
     op.drop_index('ix_templates_category', table_name='templates')
+    op.drop_column('templates', 'is_featured')
     op.drop_column('templates', 'scene_description')
     op.drop_column('templates', 'image_url')
     op.drop_column('templates', 'category')

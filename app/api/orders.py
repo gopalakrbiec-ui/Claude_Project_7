@@ -5,11 +5,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import Query
+
 from app.api.deps import get_current_user, get_db
 from app.core.queue import ArqJobQueue, JobQueue, LoggingJobQueue
 from app.models.user import User
 from app.repositories.generation_job import GenerationJobRepository
-from app.schemas.order import CreateOrderIn, OrderOut
+from app.repositories.order import OrderRepository
+from app.repositories.template import TemplateRepository
+from app.schemas.order import CreateOrderIn, OrderListOut, OrderOut
 from app.services.credits import InsufficientBalanceError
 from app.services.order import OrderService, TemplateNotFoundError
 
@@ -32,6 +36,40 @@ def _get_order_service(
     queue: Annotated[JobQueue, Depends(_get_queue)],
 ) -> OrderService:
     return OrderService(session=db, queue=queue)
+
+
+@router.get(
+    "",
+    response_model=OrderListOut,
+    summary="List the current user's orders",
+)
+async def list_orders(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> OrderListOut:
+    order_repo = OrderRepository(db)
+    template_repo = TemplateRepository(db)
+    orders, total = await order_repo.list_for_user(current_user.id, page=page, limit=limit)
+
+    # Batch-fetch template names
+    template_ids = {o.template_id for o in orders}
+    template_names: dict[int, str] = {}
+    for tid in template_ids:
+        t = await template_repo.get_active(tid)
+        if t:
+            template_names[tid] = t.name
+
+    items: list[OrderOut] = []
+    for order in orders:
+        out = OrderOut.model_validate(order)
+        out.template_name = template_names.get(order.template_id)
+        if order.status == "done":
+            out.result_url = await _presign_result(db, order.id)
+        items.append(out)
+
+    return OrderListOut(orders=items, total=total, page=page, limit=limit)
 
 
 @router.post(

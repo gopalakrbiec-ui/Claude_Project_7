@@ -22,6 +22,7 @@ class TemplateRepository:
         language: str | None = None,
         theme: str | None = None,
         category: str | None = None,
+        featured: bool | None = None,
         limit: int = 50,
     ) -> list[Template]:
         q = select(Template).where(Template.active.is_(True))
@@ -31,6 +32,8 @@ class TemplateRepository:
             q = q.where(Template.theme == theme)
         if category:
             q = q.where(Template.category == category)
-        q = q.order_by(Template.id).limit(limit)
+        if featured is not None:
+            q = q.where(Template.is_featured.is_(featured))
+        q = q.order_by(Template.is_featured.desc(), Template.id).limit(limit)
         result = await self._session.execute(q)
         return list(result.scalars().all())

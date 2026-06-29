@@ -33,6 +33,7 @@ TEMPLATES = [
         "name": "Floral Mandap",
         "category": "wedding",
         "theme": "floral",
+        "is_featured": True,
         "image_url": "https://images.unsplash.com/photo-1583089892943-e02e5b017b6a?w=600&q=85",
         "scene_description": (
             "Traditional Indian wedding mandap decorated with fresh marigold garlands, rose petals, "
@@ -45,6 +46,7 @@ TEMPLATES = [
         "name": "Royal Sherwani",
         "category": "wedding",
         "theme": "royal",
+        "is_featured": True,
         "image_url": "https://images.unsplash.com/photo-1594736797933-d0501ba2fe65?w=600&q=85",
         "scene_description": (
             "Groom in a rich red and gold embroidered sherwani standing in front of a Rajasthani palace "
@@ -91,6 +93,7 @@ TEMPLATES = [
         "name": "Grand Birthday",
         "category": "birthday",
         "theme": "grand",
+        "is_featured": True,
         "image_url": "https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=600&q=85",
         "scene_description": (
             "Person celebrating their birthday surrounded by golden balloons, confetti, and a "
@@ -159,6 +162,7 @@ TEMPLATES = [
         "name": "Bollywood Glamour",
         "category": "fashion",
         "theme": "glamour",
+        "is_featured": True,
         "image_url": "https://images.unsplash.com/photo-1596557406925-8a621e26f8e8?w=600&q=85",
         "scene_description": (
             "Glamorous Bollywood-style portrait with dramatic studio lighting, sparkly outfit, "
@@ -235,13 +239,14 @@ async def seed() -> None:
     async with factory() as session:
         await session.execute(text("TRUNCATE templates RESTART IDENTITY CASCADE"))
         for t in TEMPLATES:
+            row = {**t, "is_featured": t.get("is_featured", False)}
             await session.execute(
                 text(
                     "INSERT INTO templates "
-                    "(name, category, theme, image_url, scene_description, asset_keys, base_price_paise, active, language) "
-                    "VALUES (:name, :category, :theme, :image_url, :scene_description, '{}', :base_price_paise, true, 'en')"
+                    "(name, category, theme, image_url, scene_description, asset_keys, base_price_paise, active, language, is_featured) "
+                    "VALUES (:name, :category, :theme, :image_url, :scene_description, '{}', :base_price_paise, true, 'en', :is_featured)"
                 ),
-                t,
+                row,
             )
         await session.commit()
         print(f"Seeded {len(TEMPLATES)} templates.")

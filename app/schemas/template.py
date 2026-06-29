@@ -11,15 +11,31 @@ class TemplateOut(BaseModel):
     image_url: str | None = None
     scene_description: str | None = None
     base_price_paise: int
-    asset_keys: dict = {}
-    preview_url: str | None = None  # convenience alias
+    is_featured: bool = False
+    # asset_keys returned as list of image URLs for Flutter card display
+    asset_keys: list[str] = []
+    preview_url: str | None = None
 
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def _backfill_asset_keys(self) -> "TemplateOut":
-        """Keep asset_keys.preview_url in sync with image_url for Flutter compat."""
-        if self.image_url and not self.asset_keys.get("preview_url"):
-            self.asset_keys = {**self.asset_keys, "preview_url": self.image_url}
-        self.preview_url = self.asset_keys.get("preview_url") or self.image_url
+    def _normalise(self) -> "TemplateOut":
+        """
+        Flatten asset_keys to a list of URLs for Flutter.
+        DB stores asset_keys as a dict or list; Flutter expects list[str].
+        """
+        raw = self.__dict__.get("asset_keys") or {}
+        if isinstance(raw, dict):
+            urls = [v for v in raw.values() if isinstance(v, str) and v.startswith("http")]
+        elif isinstance(raw, list):
+            urls = [v for v in raw if isinstance(v, str)]
+        else:
+            urls = []
+
+        # Prepend image_url if not already in list
+        if self.image_url and self.image_url not in urls:
+            urls = [self.image_url] + urls
+
+        self.asset_keys = urls
+        self.preview_url = urls[0] if urls else None
         return self

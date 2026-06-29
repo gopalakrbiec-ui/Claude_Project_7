@@ -21,6 +21,7 @@ class Template(Base):
     # R2 object keys for source assets (background images, overlays, fonts, etc.)
     asset_keys: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     base_price_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
 
     orders: Mapped[list[Order]] = relationship("Order", back_populates="template")

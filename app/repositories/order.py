@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderStatus
@@ -49,3 +49,19 @@ class OrderRepository:
         await self._session.execute(
             update(Order).where(Order.id == order_id).values(status=status)
         )
+
+    async def list_for_user(
+        self, user_id: int, *, page: int = 1, limit: int = 20
+    ) -> tuple[list[Order], int]:
+        offset = (page - 1) * limit
+        q = (
+            select(Order)
+            .where(Order.user_id == user_id)
+            .order_by(Order.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        count_q = select(func.count()).select_from(Order).where(Order.user_id == user_id)
+        orders = list((await self._session.execute(q)).scalars().all())
+        total = (await self._session.execute(count_q)).scalar_one()
+        return orders, total
