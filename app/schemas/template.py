@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, model_validator
+from typing import Any
+
+from pydantic import BaseModel, Field, model_validator
 
 _CATEGORY_LABELS: dict[str, str] = {
     "wedding": "Wedding",
@@ -24,8 +26,8 @@ class TemplateOut(BaseModel):
     scene_description: str | None = None
     base_price_paise: int
     is_featured: bool = False
-    # asset_keys returned as list of image URLs for Flutter card display
-    asset_keys: list[str] = []
+    # DB stores asset_keys as JSONB dict; normalised to list[str] by _normalise()
+    asset_keys: Any = Field(default_factory=list)
     preview_url: str | None = None
 
     model_config = {"from_attributes": True}
