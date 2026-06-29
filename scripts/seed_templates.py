@@ -233,7 +233,7 @@ async def seed() -> None:
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with factory() as session:
-        await session.execute(text("DELETE FROM templates"))
+        await session.execute(text("TRUNCATE templates RESTART IDENTITY CASCADE"))
         for t in TEMPLATES:
             await session.execute(
                 text(
