@@ -17,3 +17,14 @@ class CreateOrderOut(BaseModel):
 
 class WebhookAck(BaseModel):
     status: str = "ok"
+
+
+class VerifyPaymentIn(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+class VerifyPaymentOut(BaseModel):
+    status: str       # "credited"
+    balance_paise: int

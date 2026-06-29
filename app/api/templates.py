@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -55,3 +55,16 @@ async def list_templates_grouped(
     except Exception:
         logger.exception("Failed to fetch grouped templates")
         return []
+
+
+@router.get("/{template_id}", response_model=TemplateOut)
+async def get_template(
+    template_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> TemplateOut:
+    """Get a single active template by ID."""
+    repo = TemplateRepository(db)
+    template = await repo.get_active(template_id)
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
+    return TemplateOut.model_validate(template)

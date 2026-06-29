@@ -23,7 +23,9 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 async def _get_queue() -> JobQueue:
     from app.core.config import get_settings
     settings = get_settings()
-    if settings.app_env in ("production", "staging"):
+    # Use real Redis queue whenever REDIS_URL is configured — not just in prod/staging.
+    # This fixes the "stuck in generating" bug when APP_ENV is not exactly "production".
+    if settings.redis_url:
         import arq
         from arq.connections import RedisSettings
         pool = await arq.create_pool(RedisSettings.from_dsn(str(settings.redis_url)))
@@ -130,6 +132,27 @@ async def get_order(
     if order.status == "done":
         out.result_url = await _presign_result(db, order_id)
     return out
+
+
+@router.get(
+    "/{order_id}/download",
+    summary="Get a fresh presigned download URL for a completed order",
+)
+async def download_order(
+    order_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    svc: Annotated[OrderService, Depends(_get_order_service)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    order = await svc.get_order(order_id, current_user.id)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order.status != "done":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order not yet complete")
+    url = await _presign_result(db, order_id)
+    if url is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output not found")
+    return {"result_url": url}
 
 
 async def _presign_result(db: AsyncSession, order_id: int) -> str | None:

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.payment import RazorpayAdapter
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
-from app.schemas.payment import CreateOrderIn, CreateOrderOut, WebhookAck
+from app.schemas.payment import CreateOrderIn, CreateOrderOut, VerifyPaymentIn, VerifyPaymentOut, WebhookAck
 from app.services.payment import PaymentService, WebhookSignatureError
 
 logger = logging.getLogger(__name__)
@@ -87,3 +87,66 @@ async def payment_webhook(
         logger.exception("Unexpected error processing webhook body=%s", raw_body[:200])
 
     return WebhookAck()
+
+
+@router.post(
+    "/verify",
+    response_model=VerifyPaymentOut,
+    status_code=status.HTTP_200_OK,
+    summary="Client-side Razorpay payment verification",
+)
+async def verify_payment(
+    body: VerifyPaymentIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> VerifyPaymentOut:
+    """
+    Called by the Flutter app after Razorpay SDK returns a successful payment.
+    Verifies the HMAC signature and credits the user's wallet.
+    Idempotent — safe to call multiple times with the same payment ID.
+    """
+    import hashlib
+    import hmac as hmac_lib
+    from app.core.config import get_settings
+    from app.services.credits import CreditsService
+    from app.repositories.payment import PaymentRepository
+    from app.models.ledger import LedgerReason
+    from app.services.credits import LedgerRef
+
+    settings = get_settings()
+
+    # Verify HMAC: sign(order_id + "|" + payment_id) with webhook secret
+    message = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
+    expected = hmac_lib.new(
+        settings.razorpay_key_secret.encode(), message, hashlib.sha256
+    ).hexdigest()
+    if not hmac_lib.compare_digest(expected, body.razorpay_signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment signature")
+
+    payment_repo = PaymentRepository(db)
+    payment = await payment_repo.get_by_gateway_order_id(body.razorpay_order_id)
+    if payment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment order not found")
+    if payment.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    # Credit wallet — idempotent via ledger key
+    credits_svc = CreditsService(db)
+    credit_key = f"razorpay:capture:{body.razorpay_payment_id}"
+    await credits_svc.credit(
+        user_id=current_user.id,
+        delta_paise=payment.amount_paise,
+        reason=LedgerReason.purchase,
+        ref=LedgerRef(ref_type="payment", ref_id=payment.id),
+        idempotency_key=credit_key,
+    )
+    from app.models.payment import PaymentStatus
+    if payment.status != PaymentStatus.paid:
+        await payment_repo.set_paid(payment, body.razorpay_payment_id, {
+            "razorpay_order_id": body.razorpay_order_id,
+            "razorpay_payment_id": body.razorpay_payment_id,
+        })
+    await db.commit()
+
+    balance = await credits_svc.get_balance(current_user.id)
+    return VerifyPaymentOut(status="credited", balance_paise=balance)
