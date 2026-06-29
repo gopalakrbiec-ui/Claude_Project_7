@@ -36,6 +36,12 @@ _COST_FACE_SWAP = 300
 _COST_RESTORE = 200
 _COST_BG_REMOVE = 150
 _COST_UPSCALE = 150
+_COST_AI_FILTER = 200
+_COST_TRYON = 400
+_COST_HAIR = 200
+_COST_BG_REPLACE = 200
+_COST_REMIX = 500
+_COST_TEXT2IMG = 200
 
 
 # ---------------------------------------------------------------------------
@@ -284,3 +290,290 @@ async def upscale_photo(
 
     key = await _upload_result(storage, current_user.id, "upscale", result_bytes, "image/png")
     return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_UPSCALE)
+
+
+# ---------------------------------------------------------------------------
+# AI Filter — style transfer (anime, sketch, oil painting, etc.)
+# ---------------------------------------------------------------------------
+
+
+class AiFilterIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of the user's photo")
+    style: str = Field(
+        ...,
+        description="Style name: anime | sketch | oil_painting | cinematic | watercolour | comic | ghibli | vintage",
+    )
+    strength: float = Field(default=0.75, ge=0.1, le=1.0)
+
+
+@router.post("/ai-filter", response_model=ToolOut)
+async def ai_filter(
+    body: AiFilterIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """Apply an artistic style filter to a photo (anime, sketch, oil painting, etc.)."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="AI filter provider not configured")
+
+    idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
+    await _charge(db, current_user, _COST_AI_FILTER, "ai-filter", idem_key)
+
+    storage = _get_storage()
+    photo_url = _presign(storage, body.photo_key)
+
+    from app.adapters.ai_tools import StyleTransferAdapter
+    adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
+    try:
+        result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=body.style, strength=body.strength)
+    except Exception:
+        logger.exception("ai-filter failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="AI filter failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    key = await _upload_result(storage, current_user.id, "ai-filter", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_AI_FILTER)
+
+
+# ---------------------------------------------------------------------------
+# AI Outfit / Virtual Try-On
+# ---------------------------------------------------------------------------
+
+
+class TryOnIn(BaseModel):
+    person_photo_key: str = Field(..., description="R2 key of person's photo")
+    garment_image_url: str = Field(..., description="Public URL of the garment/outfit image")
+    category: str = Field(default="upper_body", description="upper_body | lower_body | dresses")
+
+
+@router.post("/ai-outfit", response_model=ToolOut)
+async def ai_outfit(
+    body: TryOnIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """Virtual try-on — dress the user in a garment image."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="Try-on provider not configured")
+
+    idem_key = f"tool:ai-outfit:{current_user.id}:{body.person_photo_key}:{body.garment_image_url[:64]}"
+    await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
+
+    storage = _get_storage()
+    person_url = _presign(storage, body.person_photo_key)
+
+    from app.adapters.ai_tools import VirtualTryOnAdapter
+    adapter = VirtualTryOnAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TRYON)
+    try:
+        result_bytes, _ = await adapter.try_on(
+            person_image_url=person_url,
+            garment_image_url=body.garment_image_url,
+            category=body.category,
+        )
+    except Exception:
+        logger.exception("ai-outfit failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Virtual try-on failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    key = await _upload_result(storage, current_user.id, "ai-outfit", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_TRYON)
+
+
+# ---------------------------------------------------------------------------
+# Hair Salon
+# ---------------------------------------------------------------------------
+
+
+class HairSalonIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of user's photo")
+    hair_colour: str | None = Field(
+        default=None,
+        description="Colour name: black | brown | blonde | red | auburn | grey | blue | pink | purple | green",
+    )
+    hair_style_image_url: str | None = Field(
+        default=None, description="URL of a reference photo with the desired hair style"
+    )
+
+
+@router.post("/hair-salon", response_model=ToolOut)
+async def hair_salon(
+    body: HairSalonIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """Change hair colour or style. Provide colour name, style reference URL, or both."""
+    if not body.hair_colour and not body.hair_style_image_url:
+        raise HTTPException(status_code=422, detail="Provide at least hair_colour or hair_style_image_url")
+
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="Hair salon provider not configured")
+
+    idem_key = f"tool:hair:{current_user.id}:{body.photo_key}:{body.hair_colour}:{body.hair_style_image_url}"
+    await _charge(db, current_user, _COST_HAIR, "hair-salon", idem_key)
+
+    storage = _get_storage()
+    photo_url = _presign(storage, body.photo_key)
+
+    from app.adapters.ai_tools import HairSalonAdapter
+    adapter = HairSalonAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_HAIR)
+    try:
+        result_bytes, _ = await adapter.change_hair(
+            image_url=photo_url,
+            hair_style_image_url=body.hair_style_image_url,
+            hair_colour=body.hair_colour,
+        )
+    except Exception:
+        logger.exception("hair-salon failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Hair salon failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    key = await _upload_result(storage, current_user.id, "hair-salon", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_HAIR)
+
+
+# ---------------------------------------------------------------------------
+# AI Background Replace
+# ---------------------------------------------------------------------------
+
+
+class BgReplaceIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of user's photo")
+    prompt: str = Field(..., max_length=300, description="Description of the new background scene")
+
+
+@router.post("/ai-background", response_model=ToolOut)
+async def ai_background(
+    body: BgReplaceIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """Replace photo background with an AI-generated scene."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="AI background provider not configured")
+
+    idem_key = f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}"
+    await _charge(db, current_user, _COST_BG_REPLACE, "ai-background", idem_key)
+
+    storage = _get_storage()
+    photo_url = _presign(storage, body.photo_key)
+
+    from app.adapters.ai_tools import AiBgReplaceAdapter
+    adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
+    try:
+        result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
+    except Exception:
+        logger.exception("ai-background failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="AI background failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    key = await _upload_result(storage, current_user.id, "ai-background", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_BG_REPLACE)
+
+
+# ---------------------------------------------------------------------------
+# Remix — multi-image fusion (person + outfit + accessory)
+# ---------------------------------------------------------------------------
+
+
+class RemixIn(BaseModel):
+    person_photo_key: str = Field(..., description="R2 key of user's face/body photo")
+    prompt: str = Field(..., max_length=500, description="Describe the desired output")
+    style_image_url: str | None = Field(default=None, description="Outfit or style reference URL (Input2)")
+    accessory_image_url: str | None = Field(default=None, description="Jewellery or prop reference URL (Input3)")
+    strength: float = Field(default=0.85, ge=0.5, le=1.0)
+
+
+@router.post("/remix", response_model=ToolOut)
+async def remix(
+    body: RemixIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """AI Mix / Remix — fuse person photo with outfit and accessory references."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="Remix provider not configured")
+
+    idem_key = f"tool:remix:{current_user.id}:{body.person_photo_key}:{body.prompt[:64]}"
+    await _charge(db, current_user, _COST_REMIX, "remix", idem_key)
+
+    storage = _get_storage()
+    person_url = _presign(storage, body.person_photo_key)
+
+    from app.adapters.ai_tools import RemixAdapter
+    adapter = RemixAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_REMIX)
+    try:
+        result_bytes, _ = await adapter.remix(
+            person_image_url=person_url,
+            prompt=body.prompt,
+            style_image_url=body.style_image_url,
+            accessory_image_url=body.accessory_image_url,
+            strength=body.strength,
+        )
+    except Exception:
+        logger.exception("remix failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Remix failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    key = await _upload_result(storage, current_user.id, "remix", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_REMIX)
+
+
+# ---------------------------------------------------------------------------
+# Text to Image — chat prompt → image
+# ---------------------------------------------------------------------------
+
+
+class TextToImageIn(BaseModel):
+    prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
+    aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
+
+
+@router.post("/text-to-image", response_model=ToolOut)
+async def text_to_image(
+    body: TextToImageIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ToolOut:
+    """Generate an image from a text prompt (freeform chat-to-image)."""
+    from app.core.config import get_settings
+    settings = get_settings()
+    if not settings.gen_provider_api_key:
+        raise HTTPException(status_code=503, detail="Text-to-image provider not configured")
+
+    idem_key = f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}"
+    await _charge(db, current_user, _COST_TEXT2IMG, "text-to-image", idem_key)
+
+    from app.adapters.ai_tools import TextToImageAdapter
+    adapter = TextToImageAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TEXT2IMG)
+    try:
+        result_bytes, _ = await adapter.generate(prompt=body.prompt, aspect_ratio=body.aspect_ratio)
+    except Exception:
+        logger.exception("text-to-image failed for user=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Text to image failed — please try again")
+
+    import asyncio
+    from app.workers.pipeline import _apply_watermark
+    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
+    storage = _get_storage()
+    key = await _upload_result(storage, current_user.id, "text-to-image", watermarked, "image/png")
+    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_TEXT2IMG)
