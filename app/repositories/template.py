@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import defaultdict
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,3 +39,17 @@ class TemplateRepository:
         q = q.order_by(Template.is_featured.desc(), Template.id).limit(limit)
         result = await self._session.execute(q)
         return list(result.scalars().all())
+
+    async def list_grouped(self, *, limit_per_category: int = 20) -> dict[str, list[Template]]:
+        """Return active templates grouped by category, featured first within each group."""
+        q = (
+            select(Template)
+            .where(Template.active.is_(True))
+            .order_by(Template.category, Template.is_featured.desc(), Template.id)
+        )
+        result = await self._session.execute(q)
+        groups: dict[str, list[Template]] = defaultdict(list)
+        for tmpl in result.scalars().all():
+            if len(groups[tmpl.category]) < limit_per_category:
+                groups[tmpl.category].append(tmpl)
+        return dict(groups)

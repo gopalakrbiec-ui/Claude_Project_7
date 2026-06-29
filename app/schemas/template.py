@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from pydantic import BaseModel, model_validator
 
+_CATEGORY_LABELS: dict[str, str] = {
+    "wedding": "Wedding",
+    "birthday": "Birthday",
+    "festival": "Festival",
+    "fashion": "Fashion",
+    "family": "Family",
+}
+
 
 class TemplateOut(BaseModel):
     id: int
@@ -39,3 +47,9 @@ class TemplateOut(BaseModel):
         self.asset_keys = urls
         self.preview_url = urls[0] if urls else None
         return self
+
+
+class TemplateCategoryGroup(BaseModel):
+    category: str
+    label: str
+    templates: list[TemplateOut]
