@@ -111,6 +111,70 @@ def _build_generation_providers(settings) -> tuple:
     return FakeGenerationAdapter(), FakeVideoGenerationAdapter()
 
 
+async def _reconcile_stuck_orders(ctx: dict) -> None:
+    """
+    On every worker start, find orders stuck in 'generating' or 'moderating'
+    (left over from a crashed worker) and re-enqueue them.
+
+    Safe to run multiple times — Arq deduplication and the terminal-status guard
+    in generate_content prevent double-processing.
+    """
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    engine = ctx["engine"]
+    arq_pool = ctx.get("arq_pool")
+
+    async with AsyncSession(engine, expire_on_commit=False) as session:
+        # Reset stuck generation_jobs rows
+        await session.execute(text(
+            "UPDATE generation_jobs SET status = 'pending', error = NULL "
+            "WHERE order_id IN ("
+            "  SELECT id FROM orders WHERE status IN ('generating', 'moderating')"
+            ")"
+        ))
+        # Reset stuck orders to queued
+        result = await session.execute(text(
+            "UPDATE orders SET status = 'queued' "
+            "WHERE status IN ('generating', 'moderating') "
+            "RETURNING id"
+        ))
+        stuck_ids = [row[0] for row in result.fetchall()]
+        await session.commit()
+
+    if not stuck_ids:
+        logger.info("Reconciliation: no stuck orders found")
+        return
+
+    logger.warning("Reconciliation: resetting %d stuck order(s): %s", len(stuck_ids), stuck_ids)
+
+    # Re-enqueue each stuck order
+    if arq_pool is None:
+        # Build a temporary pool if not already in ctx
+        import arq as arq_lib
+        from urllib.parse import urlparse
+        from arq.connections import RedisSettings as RS
+        s = get_settings()
+        parsed = urlparse(str(s.redis_url))
+        arq_pool = await arq_lib.create_pool(RS(
+            host=parsed.hostname or "localhost",
+            port=parsed.port or 6379,
+            database=int(parsed.path.lstrip("/") or 0),
+            password=parsed.password or None,
+            ssl=parsed.scheme in ("rediss",),
+        ))
+        close_after = True
+    else:
+        close_after = False
+
+    for order_id in stuck_ids:
+        await arq_pool.enqueue_job("generate_content", order_id=order_id)
+        logger.info("Reconciliation: re-enqueued order_id=%s", order_id)
+
+    if close_after:
+        await arq_pool.aclose()
+
+
 async def on_startup(ctx: dict) -> None:
     """
     Initialise long-lived resources once per worker process.
@@ -172,6 +236,11 @@ async def on_startup(ctx: dict) -> None:
         settings.app_env,
         settings.gen_provider,
     )
+
+    # Reconcile stuck jobs from a previous crashed worker process.
+    # Any order left in 'generating' or 'moderating' was interrupted mid-flight
+    # and will never self-resolve. Reset them to 'queued' and re-enqueue.
+    await _reconcile_stuck_orders(ctx)
 
 
 async def on_job_start(ctx: dict) -> None:
