@@ -96,6 +96,32 @@ def _build_generation_providers(settings) -> tuple:
         logger.info("Generation provider: pollinations.ai (free, no API key)")
         return image_provider, FakeVideoGenerationAdapter()
 
+    if provider == "together":
+        from app.adapters.together import TogetherImageAdapter
+        from app.adapters.generation import FakeVideoGenerationAdapter
+
+        api_key = settings.together_api_key or settings.gen_provider_api_key
+        image_provider = TogetherImageAdapter(
+            api_key=api_key,
+            cost_paise=settings.gen_image_cost_paise,
+            timeout_seconds=settings.gen_image_timeout_seconds,
+        )
+        logger.info("Generation provider: together.ai (FLUX.1-schnell-Free)")
+        return image_provider, FakeVideoGenerationAdapter()
+
+    if provider == "fireworks":
+        from app.adapters.fireworks import FireworksImageAdapter
+        from app.adapters.generation import FakeVideoGenerationAdapter
+
+        api_key = settings.fireworks_api_key or settings.gen_provider_api_key
+        image_provider = FireworksImageAdapter(
+            api_key=api_key,
+            cost_paise=settings.gen_image_cost_paise,
+            timeout_seconds=settings.gen_image_timeout_seconds,
+        )
+        logger.info("Generation provider: fireworks.ai (flux-1-schnell-fp8)")
+        return image_provider, FakeVideoGenerationAdapter()
+
     if provider == "composite":
         from app.adapters.generation import CompositeGenerationAdapter, FakeVideoGenerationAdapter
 

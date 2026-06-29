@@ -66,9 +66,15 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     gen_provider: str = Field(
         default="stub",
-        description="Which generation adapter to use: stub | fal | instantid | composite | pollinations",
+        description="stub | fal | instantid | composite | pollinations | together | fireworks",
     )
     gen_provider_api_key: str = Field(default="")
+
+    # Together AI (free Flux Schnell with API key)
+    together_api_key: str = Field(default="")
+
+    # Fireworks AI (~$0.002/image, fastest inference)
+    fireworks_api_key: str = Field(default="")
 
     # fal.ai model selection (only used when gen_provider=fal)
     gen_image_model: str = Field(
