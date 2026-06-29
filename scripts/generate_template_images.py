@@ -256,6 +256,33 @@ TEMPLATE_PROMPTS: dict[str, str] = {
         "Proud standing pose, diploma held at chest height."
     ),
 
+    # ── Exact DB name variants ────────────────────────────────────────────────
+    "Kids Birthday Party": (
+        "A child in a colourful party outfit with a birthday crown, surrounded by cartoon balloons, "
+        "streamers, and a rainbow-layered cake. Bright cheerful lighting, 8K DSLR. "
+        "Candid joy, back to camera revealing the decorated party hall."
+    ),
+    "Milestone Birthday (50/60/75)": (
+        "A person in elegant ethnic wear seated at a beautifully decorated dining table with "
+        "golden milestone number balloons, flowers, and candles. "
+        "Warm intimate celebration lighting, 8K DSLR. Dignified celebratory pose."
+    ),
+    "Business Suit Portrait": (
+        "A person in a crisp tailored business suit standing against a clean neutral studio background "
+        "with soft professional lighting. Corporate headshot style, 8K DSLR. "
+        "Confident arms-crossed pose, slight forward lean, professional smile."
+    ),
+    "Traditional Kurta Look": (
+        "A person in a richly embroidered cream and gold kurta-pajama with a Nehru jacket, "
+        "standing in a marigold-decorated courtyard during Diwali. "
+        "Warm golden diyas in background, 8K DSLR photography. Relaxed festive pose."
+    ),
+    "Saree Elegance": (
+        "A person draped in an elegant Banarasi silk saree with gold zari work and traditional "
+        "jewellery, standing in a haveli courtyard with carved marble pillars. "
+        "Soft diffused sunlight, 8K DSLR portrait photography. Graceful three-quarter pose, gaze downward."
+    ),
+
     # ── Extra / alternate name variants ──────────────────────────────────────
     "Bridal Lehenga": (
         "A bride wearing an ornate crimson and gold bridal lehenga with heavy Kundan jewelry, "
