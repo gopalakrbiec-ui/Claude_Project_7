@@ -234,14 +234,15 @@ async def main() -> None:
     engine = create_async_engine(db_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    public_base = os.environ.get("R2_PUBLIC_BASE", "").rstrip("/")
+    # Fallback to the known R2 public domain if env var not set
+    public_base = (
+        os.environ.get("R2_PUBLIC_BASE", "")
+        or "https://pub-a4fafa5a7fa94188b454190c60de3862.r2.dev"
+    ).rstrip("/")
 
     # Step 1: Fix private → public URL for already-uploaded images
-    if public_base:
-        logger.info("=== Step 1: Fix template image URLs to public R2 domain ===")
-        await _fix_template_urls(session_factory, public_base)
-    else:
-        logger.info("Step 1 skipped — R2_PUBLIC_BASE not set")
+    logger.info("=== Step 1: Fix template image URLs to public R2 domain ===")
+    await _fix_template_urls(session_factory, public_base)
 
     # Step 2: Generate missing template images
     logger.info("=== Step 2: Generate missing template images ===")
