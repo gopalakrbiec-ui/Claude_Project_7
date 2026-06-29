@@ -255,6 +255,46 @@ TEMPLATE_PROMPTS: dict[str, str] = {
         "Classic 8K yearbook portrait, warm celebratory atmosphere. "
         "Proud standing pose, diploma held at chest height."
     ),
+
+    # ── Extra / alternate name variants ──────────────────────────────────────
+    "Bridal Lehenga": (
+        "A bride wearing an ornate crimson and gold bridal lehenga with heavy Kundan jewelry, "
+        "maang tikka, and kalire, standing in a lush rose garden at golden hour. "
+        "Professional wedding photography, 8K, cinematic colour grade. "
+        "Side profile pose emphasising the lehenga and jewellery."
+    ),
+    "Kids Birthday": (
+        "A child in a colourful party outfit with a birthday crown, surrounded by cartoon balloons, "
+        "streamers, and a rainbow-layered cake. Bright cheerful lighting, 8K DSLR. "
+        "Candid joy, back to camera revealing the decorated party hall."
+    ),
+    "Punjabi Bride": (
+        "A bride in a vibrant pink and red phulkari dupatta with heavy gold jewellery and kalire, "
+        "standing in a mustard field at golden hour. "
+        "8K DSLR wedding photography, Bollywood colour grade. "
+        "Twirling pose, dupatta flowing in the wind, face turned to the side."
+    ),
+    "Bollywood Glamour": (
+        "A person in a heavily embellished sequined lehenga standing centre-stage "
+        "with dramatic spotlights and a grand film-set backdrop. "
+        "Cinematic 8K photography, vibrant colours, movie-poster composition. "
+        "Dramatic full-body pose, face slightly turned from camera."
+    ),
+    "Street Fashion": (
+        "A person in stylish urban streetwear leaning against a colourful mural "
+        "in a bustling Indian city lane. Editorial fashion photography, 8K. "
+        "Cool confident pose, face angled away."
+    ),
+    "Traditional Saree": (
+        "A person draped in an elegant Banarasi silk saree with gold zari work, "
+        "standing in a haveli courtyard with carved marble pillars. "
+        "Soft diffused sunlight, 8K DSLR portrait. Graceful three-quarter pose."
+    ),
+    "Festive Kurta": (
+        "A person in a richly embroidered cream and gold kurta-pajama with a Nehru jacket, "
+        "standing in a marigold-decorated courtyard during Diwali. "
+        "Warm golden diyas in background, 8K DSLR photography."
+    ),
 }
 
 
@@ -322,9 +362,14 @@ async def main() -> None:
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with factory() as session:
-        # Fetch all active templates
+        # Fetch only templates that still have Unsplash/placeholder image_url
+        # (skip ones already updated to R2 URLs)
         rows = await session.execute(
-            text("SELECT id, name FROM templates WHERE active = true ORDER BY id")
+            text(
+                "SELECT id, name FROM templates WHERE active = true "
+                "AND (image_url IS NULL OR image_url LIKE '%unsplash%' OR image_url LIKE '%pexels%') "
+                "ORDER BY id"
+            )
         )
         templates = rows.fetchall()
         logger.info("Found %d templates to process", len(templates))
