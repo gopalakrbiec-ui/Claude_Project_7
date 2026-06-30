@@ -17,7 +17,7 @@ from app.core.retry import ProviderError, with_timeout
 
 logger = logging.getLogger(__name__)
 
-_RESTORE_MODEL = "fal-ai/gfpgan"         # face restore + enhance
+_RESTORE_MODEL = "fal-ai/clarity-upscaler"  # general photo enhance + upscale (works on any photo)
 _BG_REMOVE_MODEL = "fal-ai/birefnet"    # background removal (confirmed working)
 _UPSCALE_MODEL = "fal-ai/aura-sr"       # 4x upscaler (confirmed working)
 
@@ -51,17 +51,17 @@ class PhotoRestoreAdapter:
             logger.info("PhotoRestoreAdapter: submitting restore")
             handler = await fal_client.submit_async(
                 _RESTORE_MODEL,
-                arguments={"image_url": image_url},
+                arguments={"image_url": image_url, "scale": 2, "creativity": 0.3, "resemblance": 0.9},
             )
             result = await handler.get()
-            # gfpgan returns {"output": "url"} or {"image": {"url": ...}}
+            # clarity-upscaler returns {"image": {"url": "..."}}
             out_url = (
-                result.get("output")
-                or (result.get("image") or {}).get("url")
+                (result.get("image") or {}).get("url")
+                or result.get("output")
                 or result.get("url")
             )
             if not out_url:
-                raise ProviderError(f"gfpgan: no image URL in result: {result}")
+                raise ProviderError(f"clarity-upscaler: no image URL in result: {result}")
             return await _download(out_url), self._cost_paise
 
         return await with_timeout(_run(), seconds=self._timeout_seconds, label="PhotoRestoreAdapter")
