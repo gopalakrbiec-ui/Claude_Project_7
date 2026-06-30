@@ -19,8 +19,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    email: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True, index=True)
+    city: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    hashed_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    facebook_id: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
     preferred_language: Mapped[str] = mapped_column(String(10), nullable=False, default="hi")
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role"), nullable=False, default=UserRole.consumer

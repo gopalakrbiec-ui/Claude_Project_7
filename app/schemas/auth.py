@@ -25,8 +25,10 @@ class VerifyOtpOut(BaseModel):
 
 class MeOut(BaseModel):
     id: int
-    phone: str
+    phone: str | None = None
+    email: str | None = None
     name: str
+    city: str | None = None
     preferred_language: str
     role: str
 

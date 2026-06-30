@@ -22,17 +22,37 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_email(self, email: str) -> User | None:
+        result = await self._session.execute(
+            select(User).where(User.email == email)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_facebook_id(self, facebook_id: str) -> User | None:
+        result = await self._session.execute(
+            select(User).where(User.facebook_id == facebook_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create(
         self,
         *,
-        phone: str,
+        phone: str | None = None,
         name: str = "",
+        email: str | None = None,
+        city: str | None = None,
+        hashed_password: str | None = None,
+        facebook_id: str | None = None,
         preferred_language: str = "hi",
         role: UserRole = UserRole.consumer,
     ) -> User:
         user = User(
             phone=phone,
-            name=name or phone,  # placeholder name until user fills profile
+            name=name or phone or email or "User",
+            email=email,
+            city=city,
+            hashed_password=hashed_password,
+            facebook_id=facebook_id,
             preferred_language=preferred_language,
             role=role,
         )
