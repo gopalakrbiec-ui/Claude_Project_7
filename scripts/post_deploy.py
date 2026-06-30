@@ -231,6 +231,21 @@ async def main() -> None:
         logger.error("DATABASE_URL not set or invalid — skipping post-deploy hooks")
         return
 
+    # Step 0: Run Alembic migrations
+    logger.info("=== Step 0: Running Alembic migrations ===")
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True, text=True,
+    )
+    if result.stdout:
+        logger.info(result.stdout)
+    if result.stderr:
+        logger.info(result.stderr)
+    if result.returncode != 0:
+        logger.error("Alembic migration failed — aborting deploy")
+        sys.exit(1)
+    logger.info("=== Migrations complete ===")
+
     engine = create_async_engine(db_url)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
