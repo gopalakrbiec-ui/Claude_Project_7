@@ -52,42 +52,6 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     openai_key = settings.openai_api_key
     cost = params["cost_paise"]
 
-    # ── fal.ai-only tools (OpenAI has no equivalent) ────────────────────────
-
-    if tool_name == "face-swap":
-        # OpenAI has no face-swap — always use fal.ai
-        src_url = presign(params["source_key"])
-        tgt_url = params.get("target_url_direct") or presign(params["target_key"])
-        from app.adapters.face_swap import FalFaceSwapAdapter
-        out = await FalFaceSwapAdapter(api_key=fal_key, cost_paise=cost).swap(
-            source_image_url=src_url, target_image_url=tgt_url
-        )
-        return out.media_bytes
-
-    if tool_name == "restore":
-        # OpenAI has no photo-enhancement/upscale — always use fal.ai
-        from app.adapters.photo_tools import PhotoRestoreAdapter
-        data, _ = await PhotoRestoreAdapter(api_key=fal_key, cost_paise=cost).restore(
-            image_url=presign(key_in)
-        )
-        return data
-
-    if tool_name == "bg-remove":
-        # OpenAI can't return transparent PNG — always use fal.ai
-        from app.adapters.photo_tools import BgRemoveAdapter
-        data, _ = await BgRemoveAdapter(api_key=fal_key, cost_paise=cost).remove_bg(
-            image_url=presign(key_in)
-        )
-        return data
-
-    if tool_name == "upscale":
-        # OpenAI has no upscaler — always use fal.ai
-        from app.adapters.photo_tools import PhotoUpscaleAdapter
-        data, _ = await PhotoUpscaleAdapter(api_key=fal_key, cost_paise=cost).upscale(
-            image_url=presign(key_in), scale=params.get("scale", 4)
-        )
-        return data
-
     # ── OpenAI gpt-image-1 tools (fal.ai fallback when key not set) ─────────
 
     if tool_name == "ai-filter":

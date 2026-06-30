@@ -35,12 +35,8 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 # ---------------------------------------------------------------------------
 
 _TOOL_CATALOG = [
-    {"id": "face-swap",     "name": "Face Swap",        "icon": "face_retouching_natural", "cost_paise": 300,  "category": "portrait"},
     {"id": "ai-filter",     "name": "AI Filter",        "icon": "auto_awesome",            "cost_paise": 200,  "category": "style"},
-    {"id": "bg-remove",     "name": "BG Remove",        "icon": "layers_clear",            "cost_paise": 150,  "category": "edit"},
     {"id": "ai-background", "name": "AI Background",    "icon": "landscape",               "cost_paise": 200,  "category": "edit"},
-    {"id": "upscale",       "name": "Upscale HD",       "icon": "hd",                      "cost_paise": 150,  "category": "enhance"},
-    {"id": "restore",       "name": "Photo Restore",    "icon": "restore",                 "cost_paise": 200,  "category": "enhance"},
     {"id": "ai-outfit",     "name": "AI Outfit",        "icon": "checkroom",               "cost_paise": 400,  "category": "fashion"},
     {"id": "hair-salon",    "name": "Hair Salon",        "icon": "content_cut",             "cost_paise": 200,  "category": "fashion"},
     {"id": "remix",         "name": "Remix",             "icon": "shuffle",                 "cost_paise": 500,  "category": "creative"},
@@ -55,10 +51,6 @@ async def list_tools() -> dict:
 
 
 # Cost per tool in paise
-_COST_FACE_SWAP = 300
-_COST_RESTORE = 200
-_COST_BG_REMOVE = 150
-_COST_UPSCALE = 150
 _COST_AI_FILTER = 200
 _COST_TRYON = 400
 _COST_HAIR = 200
@@ -70,42 +62,6 @@ _COST_TEXT2IMG = 200
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
-
-
-class FaceSwapIn(BaseModel):
-    model_config = {"extra": "allow"}
-
-    source_photo_key: str | None = Field(default=None)
-    face_photo_key: str | None = Field(default=None)
-    photo_key: str | None = Field(default=None)
-    target_image_url: str | None = Field(default=None)
-    target_photo_key: str | None = Field(default=None)
-    target_body_key: str | None = Field(default=None)
-    body_photo_key: str | None = Field(default=None)
-    target_key: str | None = Field(default=None)
-
-    @property
-    def resolved_source_key(self) -> str | None:
-        known = self.source_photo_key or self.face_photo_key or self.photo_key
-        if known:
-            return known
-        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        for k, v in extras.items():
-            if "source" in k or "face" in k:
-                return v
-        return next(iter(extras.values()), None)
-
-    @property
-    def resolved_target_key(self) -> str | None:
-        known = self.target_photo_key or self.target_body_key or self.body_photo_key or self.target_key
-        if known:
-            return known
-        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        for k, v in extras.items():
-            if "target" in k or "body" in k:
-                return v
-        values = list(extras.values())
-        return values[1] if len(values) > 1 else None
 
 
 class JobOut(BaseModel):
@@ -122,19 +78,6 @@ class JobStatusOut(BaseModel):
     cost_paise: int | None = None
     result_url: str | None = None
     error: str | None = None
-
-
-class RestoreIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the photo to restore")
-
-
-class BgRemoveIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the photo")
-
-
-class UpscaleIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the photo to upscale")
-    scale: int = Field(default=4, ge=2, le=4)
 
 
 _STYLE_ALIASES: dict[str, str] = {
@@ -340,98 +283,6 @@ async def tool_status(
         result_url=data.get("result_url"),
         error=data.get("error"),
     )
-
-
-# ---------------------------------------------------------------------------
-# Face Swap
-# ---------------------------------------------------------------------------
-
-
-@router.post("/face-swap", response_model=JobOut)
-async def face_swap(
-    body: FaceSwapIn,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JobOut:
-    """Swap the user's face into a template or scene image."""
-    logger.warning("face-swap body fields: %s", {k: v for k, v in body.model_dump().items() if v is not None})
-    if body.model_extra:
-        logger.warning("face-swap EXTRA fields: %s", body.model_extra)
-
-    src_key = body.resolved_source_key
-    if not src_key:
-        raise HTTPException(status_code=422, detail="Provide source_photo_key or face_photo_key")
-    tgt_key = body.resolved_target_key
-    if not body.target_image_url and not tgt_key:
-        raise HTTPException(status_code=422, detail="Provide target_photo_key or target_body_key")
-
-    idem_key = f"tool:face-swap:{current_user.id}:{src_key}:{(body.target_image_url or tgt_key or '')[:64]}"
-    await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
-
-    # If target_image_url is an external URL, pass it directly; otherwise pass the R2 key
-    params: dict = {"source_key": src_key, "cost_paise": _COST_FACE_SWAP}
-    if body.target_image_url:
-        params["target_url_direct"] = body.target_image_url
-        params["target_key"] = src_key  # placeholder; worker uses target_url_direct
-    else:
-        params["target_key"] = tgt_key
-
-    job_id = await _enqueue("face-swap", current_user.id, _COST_FACE_SWAP, params)
-    return JobOut(job_id=job_id, cost_paise=_COST_FACE_SWAP)
-
-
-# ---------------------------------------------------------------------------
-# Photo Restore
-# ---------------------------------------------------------------------------
-
-
-@router.post("/restore", response_model=JobOut)
-async def restore_photo(
-    body: RestoreIn,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JobOut:
-    """Restore and enhance an old or blurry photo."""
-    idem_key = f"tool:restore:{current_user.id}:{body.photo_key}"
-    await _charge(db, current_user, _COST_RESTORE, "restore", idem_key)
-    job_id = await _enqueue("restore", current_user.id, _COST_RESTORE, {"photo_key": body.photo_key, "cost_paise": _COST_RESTORE})
-    return JobOut(job_id=job_id, cost_paise=_COST_RESTORE)
-
-
-# ---------------------------------------------------------------------------
-# Background Remove
-# ---------------------------------------------------------------------------
-
-
-@router.post("/bg-remove", response_model=JobOut)
-async def bg_remove(
-    body: BgRemoveIn,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JobOut:
-    """Remove background from a photo. Returns transparent PNG."""
-    idem_key = f"tool:bg-remove:{current_user.id}:{body.photo_key}"
-    await _charge(db, current_user, _COST_BG_REMOVE, "bg-remove", idem_key)
-    job_id = await _enqueue("bg-remove", current_user.id, _COST_BG_REMOVE, {"photo_key": body.photo_key, "cost_paise": _COST_BG_REMOVE})
-    return JobOut(job_id=job_id, cost_paise=_COST_BG_REMOVE)
-
-
-# ---------------------------------------------------------------------------
-# Upscale
-# ---------------------------------------------------------------------------
-
-
-@router.post("/upscale", response_model=JobOut)
-async def upscale_photo(
-    body: UpscaleIn,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> JobOut:
-    """Upscale a photo up to 4× using Real-ESRGAN."""
-    idem_key = f"tool:upscale:{current_user.id}:{body.photo_key}:{body.scale}"
-    await _charge(db, current_user, _COST_UPSCALE, "upscale", idem_key)
-    job_id = await _enqueue("upscale", current_user.id, _COST_UPSCALE, {"photo_key": body.photo_key, "scale": body.scale, "cost_paise": _COST_UPSCALE})
-    return JobOut(job_id=job_id, cost_paise=_COST_UPSCALE)
 
 
 # ---------------------------------------------------------------------------
