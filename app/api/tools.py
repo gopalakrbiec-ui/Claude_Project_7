@@ -74,10 +74,12 @@ _COST_TEXT2IMG = 200
 
 
 class FaceSwapIn(BaseModel):
-    # source face — accept any field name Flutter might send
+    model_config = {"extra": "allow"}
+
+    # Known source-face field names
     source_photo_key: str | None = Field(default=None)
     face_photo_key: str | None = Field(default=None)
-    # target body — accept any field name Flutter might send
+    # Known target-body field names
     target_image_url: str | None = Field(default=None)
     target_photo_key: str | None = Field(default=None)
     target_body_key: str | None = Field(default=None)
@@ -86,11 +88,25 @@ class FaceSwapIn(BaseModel):
 
     @property
     def resolved_source_key(self) -> str | None:
-        return self.source_photo_key or self.face_photo_key
+        known = self.source_photo_key or self.face_photo_key
+        if known:
+            return known
+        # Fall back: first extra field whose name contains "source" or "face"
+        for k, v in (self.model_extra or {}).items():
+            if v and isinstance(v, str) and ("source" in k or "face" in k):
+                return v
+        return None
 
     @property
     def resolved_target_key(self) -> str | None:
-        return self.target_photo_key or self.target_body_key or self.body_photo_key or self.target_key
+        known = self.target_photo_key or self.target_body_key or self.body_photo_key or self.target_key
+        if known:
+            return known
+        # Fall back: first extra field whose name contains "target" or "body"
+        for k, v in (self.model_extra or {}).items():
+            if v and isinstance(v, str) and ("target" in k or "body" in k):
+                return v
+        return None
 
 
 class ToolOut(BaseModel):
@@ -203,6 +219,10 @@ async def face_swap(
 
     if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="Face swap provider not configured")
+
+    logger.info("face-swap body fields: %s", {k: v for k, v in body.model_dump().items() if v is not None})
+    if body.model_extra:
+        logger.info("face-swap EXTRA fields: %s", body.model_extra)
 
     idem_key = f"tool:face-swap:{current_user.id}:{body.resolved_source_key}:{(body.target_image_url or body.resolved_target_key or '')[:64]}"
     await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
