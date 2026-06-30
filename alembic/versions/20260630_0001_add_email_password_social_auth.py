@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260630_0001"
-down_revision = "20260629_0002_add_template_is_featured"
+down_revision = "b2c3d4e5f6a1"
 branch_labels = None
 depends_on = None
 
