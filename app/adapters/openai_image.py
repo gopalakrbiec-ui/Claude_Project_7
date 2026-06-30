@@ -44,6 +44,18 @@ _STYLE_PROMPTS: dict[str, str] = {
 }
 
 
+
+def _ensure_png(data: bytes) -> bytes:
+    """Convert image bytes to PNG if not already PNG."""
+    from PIL import Image
+    if data[:4] == b"\x89PNG":
+        return data
+    img = Image.open(io.BytesIO(data)).convert("RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 class OpenAIImageAdapter:
     """
     Text-to-image and image editing via OpenAI gpt-image-1.
@@ -111,17 +123,17 @@ class OpenAIImageAdapter:
         async def _run() -> tuple[bytes, int]:
             logger.info("OpenAI edit: prompt=%s…", prompt[:60])
 
+            # OpenAI edits requires PNG; convert if necessary
+            png_bytes = _ensure_png(image_bytes)
             files: dict = {
                 "model": (None, "gpt-image-1"),
                 "prompt": (None, prompt),
                 "n": (None, "1"),
-                "size": (None, "1024x1024"),
                 "quality": (None, self._quality),
-                "output_format": (None, "png"),
-                "image[]": ("image.png", image_bytes, "image/png"),
+                "image": ("image.png", png_bytes, "image/png"),
             }
             if mask_bytes:
-                files["mask"] = ("mask.png", mask_bytes, "image/png")
+                files["mask"] = ("mask.png", _ensure_png(mask_bytes), "image/png")
 
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 resp = await client.post(
