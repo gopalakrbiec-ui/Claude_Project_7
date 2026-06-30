@@ -446,10 +446,41 @@ async def ai_filter(
 
 
 class TryOnIn(BaseModel):
-    person_photo_key: str = Field(..., description="R2 key of person's photo")
-    garment_image_url: str | None = Field(default=None, description="Public URL of the garment/outfit image")
-    garment_photo_key: str | None = Field(default=None, description="R2 key of garment photo (alternative to garment_image_url)")
-    category: str = Field(default="upper_body", description="upper_body | lower_body | dresses")
+    model_config = {"extra": "allow"}
+
+    # Person photo — accept any field name Flutter might send
+    person_photo_key: str | None = Field(default=None)
+    photo_key: str | None = Field(default=None)
+    user_photo_key: str | None = Field(default=None)
+    # Garment photo — accept any field name Flutter might send
+    garment_image_url: str | None = Field(default=None)
+    garment_photo_key: str | None = Field(default=None)
+    outfit_photo_key: str | None = Field(default=None)
+    clothing_photo_key: str | None = Field(default=None)
+    category: str = Field(default="upper_body")
+
+    @property
+    def resolved_person_key(self) -> str | None:
+        known = self.person_photo_key or self.photo_key or self.user_photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "person" in k or "user" in k or "photo" in k or "your" in k:
+                return v
+        return next(iter(extras.values()), None)
+
+    @property
+    def resolved_garment_key(self) -> str | None:
+        known = self.garment_photo_key or self.outfit_photo_key or self.clothing_photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "garment" in k or "outfit" in k or "cloth" in k:
+                return v
+        values = list(extras.values())
+        return values[1] if len(values) > 1 else None
 
 
 @router.post("/ai-outfit", response_model=ToolOut)
@@ -464,15 +495,22 @@ async def ai_outfit(
     if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="Try-on provider not configured")
 
-    idem_key = f"tool:ai-outfit:{current_user.id}:{body.person_photo_key}:{(body.garment_image_url or body.garment_photo_key or '')[:64]}"
+    logger.warning("ai-outfit body: %s extras: %s",
+        {k: v for k, v in body.model_dump().items() if v and k != "model_config"},
+        body.model_extra)
+    idem_key = f"tool:ai-outfit:{current_user.id}:{body.resolved_person_key}:{(body.garment_image_url or body.resolved_garment_key or '')[:64]}"
     await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
 
-    if not body.garment_image_url and not body.garment_photo_key:
-        raise HTTPException(status_code=422, detail="Provide garment_image_url or garment_photo_key")
+    person_key = body.resolved_person_key
+    if not person_key:
+        raise HTTPException(status_code=422, detail="Provide person_photo_key")
+    garment_key = body.resolved_garment_key
+    if not body.garment_image_url and not garment_key:
+        raise HTTPException(status_code=422, detail="Provide garment_photo_key or outfit_photo_key")
 
     storage = _get_storage()
-    person_url = _presign(storage, body.person_photo_key)
-    garment_url = body.garment_image_url or _presign(storage, body.garment_photo_key)
+    person_url = _presign(storage, person_key)
+    garment_url = body.garment_image_url or _presign(storage, garment_key)
 
     from app.adapters.ai_tools import VirtualTryOnAdapter
     adapter = VirtualTryOnAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TRYON)
