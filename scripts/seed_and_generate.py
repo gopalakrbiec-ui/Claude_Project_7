@@ -407,7 +407,7 @@ async def main() -> None:
         # Step 1: Remove all existing data (order matters — FK constraints)
         logger.info("Clearing orders, jobs, and templates...")
         await session.execute(text("DELETE FROM generation_jobs"))
-        await session.execute(text("DELETE FROM ledger_entries WHERE ref_type = 'order'"))
+        await session.execute(text("DELETE FROM credit_ledger WHERE ref_type = 'order'"))
         await session.execute(text("DELETE FROM orders"))
         await session.execute(text("DELETE FROM templates"))
         await session.execute(text("ALTER SEQUENCE templates_id_seq RESTART WITH 1"))
