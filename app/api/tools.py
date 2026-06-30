@@ -413,7 +413,7 @@ async def ai_filter(
     """Apply an artistic style filter to a photo (anime, sketch, oil painting, etc.)."""
     from app.core.config import get_settings
     settings = get_settings()
-    if not settings.openai_api_key and not settings.gen_provider_api_key:
+    if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="AI filter provider not configured")
 
     idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
@@ -423,17 +423,12 @@ async def ai_filter(
 
     storage = _get_storage()
     photo_url = _presign(storage, body.photo_key)
-    photo_bytes = await _download_bytes(photo_url)
 
     try:
-        if settings.openai_api_key:
-            from app.adapters.openai_image import OpenAIImageAdapter
-            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_AI_FILTER)
-            result_bytes, _ = await adapter.style_filter(photo_bytes, style=style)
-        else:
-            from app.adapters.ai_tools import StyleTransferAdapter
-            adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
-            result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=body.style, strength=body.strength)
+        # Always use fal.ai for style transfer (OpenAI edit is too slow; times out at 60s)
+        from app.adapters.ai_tools import StyleTransferAdapter
+        adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
+        result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=style, strength=body.strength)
     except Exception:
         logger.exception("ai-filter failed for user=%s", current_user.id)
         raise HTTPException(status_code=500, detail="AI filter failed — please try again")
@@ -573,7 +568,7 @@ async def ai_background(
     """Replace photo background with an AI-generated scene."""
     from app.core.config import get_settings
     settings = get_settings()
-    if not settings.openai_api_key and not settings.gen_provider_api_key:
+    if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="AI background provider not configured")
 
     idem_key = f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}"
@@ -582,17 +577,11 @@ async def ai_background(
     storage = _get_storage()
     photo_url = _presign(storage, body.photo_key)
 
-    photo_bytes = await _download_bytes(photo_url)
-
     try:
-        if settings.openai_api_key:
-            from app.adapters.openai_image import OpenAIImageAdapter
-            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_BG_REPLACE)
-            result_bytes, _ = await adapter.bg_replace(photo_bytes, bg_prompt=body.prompt)
-        else:
-            from app.adapters.ai_tools import AiBgReplaceAdapter
-            adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
-            result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
+        # Always use fal.ai for bg-replace (OpenAI edit is too slow; times out at 60s)
+        from app.adapters.ai_tools import AiBgReplaceAdapter
+        adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
+        result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
     except Exception:
         logger.exception("ai-background failed for user=%s", current_user.id)
         raise HTTPException(status_code=500, detail="AI background failed — please try again")
