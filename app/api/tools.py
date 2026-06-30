@@ -639,11 +639,34 @@ async def ai_background(
 
 
 class RemixIn(BaseModel):
-    person_photo_key: str = Field(..., description="R2 key of user's face/body photo")
-    prompt: str = Field(..., max_length=500, description="Describe the desired output")
-    style_image_url: str | None = Field(default=None, description="Outfit or style reference URL (Input2)")
-    accessory_image_url: str | None = Field(default=None, description="Jewellery or prop reference URL (Input3)")
+    model_config = {"extra": "allow"}
+
+    # Person photo — accept any field name
+    person_photo_key: str | None = Field(default=None)
+    photo_key: str | None = Field(default=None)
+    # Prompt — accept style/remix_style as alias
+    prompt: str | None = Field(default=None, max_length=500)
+    style: str | None = Field(default=None, max_length=500)
+    remix_style: str | None = Field(default=None, max_length=500)
+    # Optional references
+    style_image_url: str | None = Field(default=None)
+    accessory_image_url: str | None = Field(default=None)
     strength: float = Field(default=0.85, ge=0.5, le=1.0)
+
+    @property
+    def resolved_person_key(self) -> str | None:
+        known = self.person_photo_key or self.photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "person" in k or "photo" in k or "user" in k:
+                return v
+        return next(iter(extras.values()), None)
+
+    @property
+    def resolved_prompt(self) -> str:
+        return self.prompt or self.style or self.remix_style or "creative remix"
 
 
 @router.post("/remix", response_model=ToolOut)
@@ -658,18 +681,22 @@ async def remix(
     if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="Remix provider not configured")
 
-    idem_key = f"tool:remix:{current_user.id}:{body.person_photo_key}:{body.prompt[:64]}"
+    person_key = body.resolved_person_key
+    if not person_key:
+        raise HTTPException(status_code=422, detail="Provide person_photo_key or photo_key")
+
+    idem_key = f"tool:remix:{current_user.id}:{person_key}:{body.resolved_prompt[:64]}"
     await _charge(db, current_user, _COST_REMIX, "remix", idem_key)
 
     storage = _get_storage()
-    person_url = _presign(storage, body.person_photo_key)
+    person_url = _presign(storage, person_key)
 
     from app.adapters.ai_tools import RemixAdapter
     adapter = RemixAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_REMIX)
     try:
         result_bytes, _ = await adapter.remix(
             person_image_url=person_url,
-            prompt=body.prompt,
+            prompt=body.resolved_prompt,
             style_image_url=body.style_image_url,
             accessory_image_url=body.accessory_image_url,
             strength=body.strength,
