@@ -17,7 +17,7 @@ from app.core.retry import ProviderError, with_timeout
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "fal-ai/face_swap"
+_MODEL = "fal-ai/face-swap/turbo"  # correct slug — underscore slug is 404
 
 
 def _set_fal_key(api_key: str) -> None:
@@ -55,8 +55,8 @@ class FalFaceSwapAdapter:
             handler = await fal_client.submit_async(
                 _MODEL,
                 arguments={
-                    "source_image_url": source_image_url,
-                    "target_image_url": target_image_url,
+                    "base_image_url": target_image_url,
+                    "face_image_url": source_image_url,
                 },
             )
             result = await handler.get()
@@ -79,7 +79,7 @@ class FalFaceSwapAdapter:
             return GenerationOutput(
                 media_bytes=media_bytes,
                 cost_paise=self._cost_paise,
-                provider_name="fal.ai/face_swap",
+                provider_name="fal.ai/face-swap/turbo",
                 media_type="image",
                 model_id=_MODEL,
             )

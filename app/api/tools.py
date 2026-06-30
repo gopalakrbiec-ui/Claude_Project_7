@@ -79,6 +79,7 @@ class FaceSwapIn(BaseModel):
     # Known source-face field names
     source_photo_key: str | None = Field(default=None)
     face_photo_key: str | None = Field(default=None)
+    photo_key: str | None = Field(default=None)  # Flutter sends this for face
     # Known target-body field names
     target_image_url: str | None = Field(default=None)
     target_photo_key: str | None = Field(default=None)
@@ -88,7 +89,7 @@ class FaceSwapIn(BaseModel):
 
     @property
     def resolved_source_key(self) -> str | None:
-        known = self.source_photo_key or self.face_photo_key
+        known = self.source_photo_key or self.face_photo_key or self.photo_key
         if known:
             return known
         extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
