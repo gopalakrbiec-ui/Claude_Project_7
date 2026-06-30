@@ -20,10 +20,6 @@ from app.services.auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 def _pwd_context():
     from passlib.context import CryptContext
     return CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -113,102 +109,8 @@ async def register(
 
 
 # ---------------------------------------------------------------------------
-# POST /auth/google  — Google Sign-In (id_token from Flutter)
+# OTP flow (existing)
 # ---------------------------------------------------------------------------
-
-class GoogleAuthRequest(BaseModel):
-    id_token: str
-
-
-@router.post("/google", summary="Sign in with Google")
-async def google_auth(
-    body: GoogleAuthRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    from app.core.config import get_settings
-    settings = get_settings()
-
-    if not settings.google_client_id:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Google auth not configured")
-
-    # Verify id_token with Google (sync call — run in thread)
-    import asyncio
-    try:
-        info = await asyncio.get_event_loop().run_in_executor(
-            None, _verify_google_token, body.id_token, settings.google_client_id
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Invalid Google token: {exc}")
-
-    email: str = info["email"]
-    name: str = info.get("name", "")
-
-    from app.repositories.user import UserRepository
-    repo = UserRepository(db)
-
-    user = await repo.get_by_email(email)
-    is_new = user is None
-    if is_new:
-        user = await repo.create(name=name, email=email)
-        await db.commit()
-
-    return _token_response(user, is_new=is_new)
-
-
-def _verify_google_token(id_token_str: str, client_id: str) -> dict:
-    from google.oauth2 import id_token
-    from google.auth.transport import requests as google_requests
-    return id_token.verify_oauth2_token(id_token_str, google_requests.Request(), client_id)
-
-
-# ---------------------------------------------------------------------------
-# POST /auth/facebook  — Facebook Login (access_token from Flutter)
-# ---------------------------------------------------------------------------
-
-class FacebookAuthRequest(BaseModel):
-    access_token: str
-
-
-@router.post("/facebook", summary="Sign in with Facebook")
-async def facebook_auth(
-    body: FacebookAuthRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    import httpx
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            "https://graph.facebook.com/me",
-            params={"fields": "id,name,email", "access_token": body.access_token},
-        )
-
-    if r.status_code != 200:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Facebook token")
-
-    data = r.json()
-    if "error" in data:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Facebook token")
-
-    fb_id: str = data["id"]
-    name: str = data.get("name", "")
-    email: str | None = data.get("email")
-
-    from app.repositories.user import UserRepository
-    repo = UserRepository(db)
-
-    user = await repo.get_by_facebook_id(fb_id)
-    if user is None and email:
-        user = await repo.get_by_email(email)
-
-    is_new = user is None
-    if is_new:
-        user = await repo.create(name=name, email=email, facebook_id=fb_id)
-        await db.commit()
-    elif user.facebook_id is None:
-        user.facebook_id = fb_id
-        await db.commit()
-
-    return _token_response(user, is_new=is_new)
-
 
 @router.post("/request-otp", response_model=RequestOtpOut, status_code=status.HTTP_200_OK)
 async def request_otp(

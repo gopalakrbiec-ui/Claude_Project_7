@@ -28,12 +28,6 @@ class UserRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_facebook_id(self, facebook_id: str) -> User | None:
-        result = await self._session.execute(
-            select(User).where(User.facebook_id == facebook_id)
-        )
-        return result.scalar_one_or_none()
-
     async def create(
         self,
         *,
@@ -42,7 +36,6 @@ class UserRepository:
         email: str | None = None,
         city: str | None = None,
         hashed_password: str | None = None,
-        facebook_id: str | None = None,
         preferred_language: str = "hi",
         role: UserRole = UserRole.consumer,
     ) -> User:
@@ -52,7 +45,6 @@ class UserRepository:
             email=email,
             city=city,
             hashed_password=hashed_password,
-            facebook_id=facebook_id,
             preferred_language=preferred_language,
             role=role,
         )

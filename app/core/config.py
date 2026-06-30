@@ -73,8 +73,6 @@ class Settings(BaseSettings):
     # OpenAI — gpt-image-1 for ai-filter, bg-replace, text-to-image tools
     openai_api_key: str = Field(default="")
 
-    # Google Sign-In — OAuth 2.0 Client ID from Google Cloud Console
-    google_client_id: str = Field(default="")
 
     # Together AI (free Flux Schnell with API key)
     together_api_key: str = Field(default="")
