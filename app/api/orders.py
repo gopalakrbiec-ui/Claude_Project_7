@@ -69,6 +69,8 @@ async def list_orders(
         out.template_name = template_names.get(order.template_id)
         if order.status == "done":
             out.result_url = await _presign_result(db, order.id)
+        if order.status == "rejected":
+            out.rejection_reason = await _fetch_rejection_reason(db, order.id)
         items.append(out)
 
     return OrderListOut(orders=items, total=total, page=page, limit=limit)
@@ -131,6 +133,8 @@ async def get_order(
     out = OrderOut.model_validate(order)
     if order.status == "done":
         out.result_url = await _presign_result(db, order_id)
+    if order.status == "rejected":
+        out.rejection_reason = await _fetch_rejection_reason(db, order_id)
     return out
 
 
@@ -153,6 +157,12 @@ async def download_order(
     if url is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Output not found")
     return {"result_url": url}
+
+
+async def _fetch_rejection_reason(db: AsyncSession, order_id: int) -> str | None:
+    job_repo = GenerationJobRepository(db)
+    job = await job_repo.get_by_order_id(order_id)
+    return job.error if job else None
 
 
 async def _presign_result(db: AsyncSession, order_id: int) -> str | None:

@@ -30,6 +30,7 @@ class OrderOut(BaseModel):
     input_payload: dict
     created_at: datetime
     result_url: str | None = None  # presigned URL populated by GET /orders/{id}
+    rejection_reason: str | None = None  # populated when status == "rejected"
 
     model_config = {"from_attributes": True}
 
