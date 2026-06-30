@@ -56,7 +56,7 @@ class FalFaceSwapAdapter:
                 _MODEL,
                 arguments={
                     "base_image_url": target_image_url,
-                    "face_image_url": source_image_url,
+                    "swap_image_url": source_image_url,
                 },
             )
             result = await handler.get()
