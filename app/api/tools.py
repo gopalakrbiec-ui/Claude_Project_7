@@ -75,7 +75,8 @@ _COST_TEXT2IMG = 200
 
 class FaceSwapIn(BaseModel):
     source_photo_key: str = Field(..., description="R2 key of the user's face photo (from /uploads/photo)")
-    target_image_url: str = Field(..., description="Public URL of the target template/scene image")
+    target_image_url: str | None = Field(default=None, description="Public URL of the target scene image")
+    target_photo_key: str | None = Field(default=None, description="R2 key of target photo (alternative to target_image_url)")
 
 
 class ToolOut(BaseModel):
@@ -131,6 +132,11 @@ async def _charge(
     idempotency_key: str,
 ) -> None:
     """Deduct credits. Raises 402 on insufficient balance."""
+    from app.core.config import get_settings
+    if get_settings().bypass_payments:
+        logger.warning("bypass_payments: skipping credit charge for tool=%s user=%s", tool_name, user.id)
+        return
+
     svc = CreditsService(db)
     try:
         await svc.debit(
@@ -187,8 +193,12 @@ async def face_swap(
     idem_key = f"tool:face-swap:{current_user.id}:{body.source_photo_key}:{body.target_image_url[:64]}"
     await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
 
+    if not body.target_image_url and not body.target_photo_key:
+        raise HTTPException(status_code=422, detail="Provide target_image_url or target_photo_key")
+
     storage = _get_storage()
     source_url = _presign(storage, body.source_photo_key)
+    target_url = body.target_image_url or _presign(storage, body.target_photo_key)
 
     from app.adapters.face_swap import FalFaceSwapAdapter
     adapter = FalFaceSwapAdapter(
@@ -198,7 +208,7 @@ async def face_swap(
     try:
         output = await adapter.swap(
             source_image_url=source_url,
-            target_image_url=body.target_image_url,
+            target_image_url=target_url,
         )
     except Exception:
         logger.exception("face-swap failed for user=%s", current_user.id)
@@ -329,11 +339,25 @@ async def upscale_photo(
 # ---------------------------------------------------------------------------
 
 
+_STYLE_ALIASES: dict[str, str] = {
+    "water": "watercolour", "watercolor": "watercolour", "watercolour": "watercolour",
+    "anime": "anime", "cartoon": "anime",
+    "sketch": "sketch", "pencil": "sketch", "drawing": "sketch",
+    "oil": "oil_painting", "oil_painting": "oil_painting", "painting": "oil_painting",
+    "cinematic": "cinematic", "movie": "cinematic", "film": "cinematic",
+    "comic": "comic", "comics": "comic", "pop": "comic",
+    "ghibli": "ghibli", "studio ghibli": "ghibli",
+    "vintage": "vintage", "retro": "vintage", "old": "vintage",
+    "bollywood": "bollywood",
+    "royal": "royal",
+}
+
+
 class AiFilterIn(BaseModel):
     photo_key: str = Field(..., description="R2 key of the user's photo")
     style: str = Field(
         ...,
-        description="Style name: anime | sketch | oil_painting | cinematic | watercolour | comic | ghibli | vintage",
+        description="Style: anime | sketch | oil_painting | cinematic | watercolour | comic | ghibli | vintage | bollywood | royal",
     )
     strength: float = Field(default=0.75, ge=0.1, le=1.0)
 
@@ -353,6 +377,8 @@ async def ai_filter(
     idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
     await _charge(db, current_user, _COST_AI_FILTER, "ai-filter", idem_key)
 
+    style = _STYLE_ALIASES.get(body.style.lower().strip(), body.style)
+
     storage = _get_storage()
     photo_url = _presign(storage, body.photo_key)
     photo_bytes = await _download_bytes(photo_url)
@@ -361,7 +387,7 @@ async def ai_filter(
         if settings.openai_api_key:
             from app.adapters.openai_image import OpenAIImageAdapter
             adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_AI_FILTER)
-            result_bytes, _ = await adapter.style_filter(photo_bytes, style=body.style)
+            result_bytes, _ = await adapter.style_filter(photo_bytes, style=style)
         else:
             from app.adapters.ai_tools import StyleTransferAdapter
             adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
@@ -384,7 +410,8 @@ async def ai_filter(
 
 class TryOnIn(BaseModel):
     person_photo_key: str = Field(..., description="R2 key of person's photo")
-    garment_image_url: str = Field(..., description="Public URL of the garment/outfit image")
+    garment_image_url: str | None = Field(default=None, description="Public URL of the garment/outfit image")
+    garment_photo_key: str | None = Field(default=None, description="R2 key of garment photo (alternative to garment_image_url)")
     category: str = Field(default="upper_body", description="upper_body | lower_body | dresses")
 
 
@@ -403,15 +430,19 @@ async def ai_outfit(
     idem_key = f"tool:ai-outfit:{current_user.id}:{body.person_photo_key}:{body.garment_image_url[:64]}"
     await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
 
+    if not body.garment_image_url and not body.garment_photo_key:
+        raise HTTPException(status_code=422, detail="Provide garment_image_url or garment_photo_key")
+
     storage = _get_storage()
     person_url = _presign(storage, body.person_photo_key)
+    garment_url = body.garment_image_url or _presign(storage, body.garment_photo_key)
 
     from app.adapters.ai_tools import VirtualTryOnAdapter
     adapter = VirtualTryOnAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TRYON)
     try:
         result_bytes, _ = await adapter.try_on(
             person_image_url=person_url,
-            garment_image_url=body.garment_image_url,
+            garment_image_url=garment_url,
             category=body.category,
         )
     except Exception:
