@@ -200,3 +200,39 @@ class OpenAIImageAdapter:
             r = await client.get(url)
             r.raise_for_status()
             return r.content
+
+
+class OpenAIGenerationAdapter:
+    """
+    Implements GenerationProvider using OpenAI gpt-image-1 (text-to-image).
+    Drop-in replacement for fal.ai in the order/template pipeline.
+    Set GEN_PROVIDER=openai in Railway env to activate.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        cost_paise: int = 250,
+        timeout_seconds: float = 120.0,
+        quality: Literal["low", "medium", "high", "auto"] = "medium",
+        aspect_ratio: str = "9:16",
+    ) -> None:
+        self._adapter = OpenAIImageAdapter(
+            api_key=api_key,
+            cost_paise=cost_paise,
+            timeout_seconds=timeout_seconds,
+            quality=quality,
+        )
+        self._aspect_ratio = aspect_ratio
+
+    async def generate(self, prompt: str) -> "GenerationOutput":
+        from app.adapters.generation import GenerationOutput
+        image_bytes, cost = await self._adapter.generate(prompt, aspect_ratio=self._aspect_ratio)
+        return GenerationOutput(
+            media_bytes=image_bytes,
+            cost_paise=cost,
+            provider_name="openai/gpt-image-1",
+            media_type="image",
+            model_id="gpt-image-1",
+        )

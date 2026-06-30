@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     gen_provider: str = Field(
         default="stub",
-        description="stub | fal | instantid | composite | pollinations | together | fireworks",
+        description="stub | openai | fal | instantid | composite | pollinations | together | fireworks",
     )
     gen_provider_api_key: str = Field(default="")
 
