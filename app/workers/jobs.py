@@ -29,6 +29,14 @@ _TOOL_JOB_TTL = 86400  # 24 hours
 # ---------------------------------------------------------------------------
 
 
+async def _fetch_bytes(url: str) -> bytes:
+    import httpx
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.content
+
+
 async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> bytes:
     """Run the appropriate adapter for tool_name and return result bytes."""
     storage = ctx.get("storage_adapter")
@@ -42,79 +50,91 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     key_in = params.get("photo_key")
     fal_key = settings.gen_provider_api_key
     openai_key = settings.openai_api_key
+    cost = params["cost_paise"]
+
+    # ── fal.ai-only tools (OpenAI has no equivalent) ────────────────────────
 
     if tool_name == "face-swap":
+        # OpenAI has no face-swap — always use fal.ai
         src_url = presign(params["source_key"])
         tgt_url = params.get("target_url_direct") or presign(params["target_key"])
         from app.adapters.face_swap import FalFaceSwapAdapter
-        out = await FalFaceSwapAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).swap(
+        out = await FalFaceSwapAdapter(api_key=fal_key, cost_paise=cost).swap(
             source_image_url=src_url, target_image_url=tgt_url
         )
         return out.media_bytes
 
     if tool_name == "restore":
+        # OpenAI has no photo-enhancement/upscale — always use fal.ai
         from app.adapters.photo_tools import PhotoRestoreAdapter
-        data, _ = await PhotoRestoreAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).restore(
+        data, _ = await PhotoRestoreAdapter(api_key=fal_key, cost_paise=cost).restore(
             image_url=presign(key_in)
         )
         return data
 
     if tool_name == "bg-remove":
+        # OpenAI can't return transparent PNG — always use fal.ai
         from app.adapters.photo_tools import BgRemoveAdapter
-        data, _ = await BgRemoveAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).remove_bg(
+        data, _ = await BgRemoveAdapter(api_key=fal_key, cost_paise=cost).remove_bg(
             image_url=presign(key_in)
         )
         return data
 
     if tool_name == "upscale":
+        # OpenAI has no upscaler — always use fal.ai
         from app.adapters.photo_tools import PhotoUpscaleAdapter
-        data, _ = await PhotoUpscaleAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).upscale(
+        data, _ = await PhotoUpscaleAdapter(api_key=fal_key, cost_paise=cost).upscale(
             image_url=presign(key_in), scale=params.get("scale", 4)
         )
         return data
 
+    # ── OpenAI gpt-image-1 tools (fal.ai fallback when key not set) ─────────
+
     if tool_name == "ai-filter":
         style = params.get("style", "anime")
-        strength = params.get("strength", 0.75)
         if openai_key:
-            import httpx
             from app.adapters.openai_image import OpenAIImageAdapter
-            adapter = OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"])
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(presign(key_in))
-                resp.raise_for_status()
-                photo_bytes = resp.content
-            data, _ = await adapter.style_filter(photo_bytes, style)
+            photo_bytes = await _fetch_bytes(presign(key_in))
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).style_filter(photo_bytes, style)
             return data
         from app.adapters.ai_tools import StyleTransferAdapter
-        data, _ = await StyleTransferAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).apply_style(
-            image_url=presign(key_in), style=style, strength=strength
+        data, _ = await StyleTransferAdapter(api_key=fal_key, cost_paise=cost).apply_style(
+            image_url=presign(key_in), style=style, strength=params.get("strength", 0.75)
         )
         return data
 
     if tool_name == "ai-background":
         prompt = params.get("prompt", "")
         if openai_key:
-            import httpx
             from app.adapters.openai_image import OpenAIImageAdapter
-            adapter = OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"])
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(presign(key_in))
-                resp.raise_for_status()
-                photo_bytes = resp.content
-            data, _ = await adapter.bg_replace(photo_bytes, prompt)
+            photo_bytes = await _fetch_bytes(presign(key_in))
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).bg_replace(photo_bytes, prompt)
             return data
         from app.adapters.ai_tools import AiBgReplaceAdapter
-        data, _ = await AiBgReplaceAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).replace_bg(
+        data, _ = await AiBgReplaceAdapter(api_key=fal_key, cost_paise=cost).replace_bg(
             image_url=presign(key_in), prompt=prompt
         )
         return data
 
     if tool_name == "ai-outfit":
-        person_url = presign(params["person_key"])
+        person_key = params["person_key"]
         garment_url = params.get("garment_image_url") or presign(params["garment_key"])
+        if openai_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            photo_bytes = await _fetch_bytes(presign(person_key))
+            garment_bytes = await _fetch_bytes(garment_url)
+            prompt = (
+                "Dress the person in this exact outfit from the reference image. "
+                "Keep the person's face, skin tone, body pose, and background unchanged. "
+                "Only replace the clothing with the outfit shown."
+            )
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(
+                photo_bytes, prompt, mask_bytes=None
+            )
+            return data
+        person_url = presign(person_key)
         from app.adapters.ai_tools import VirtualTryOnAdapter
-        data, _ = await VirtualTryOnAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).try_on(
+        data, _ = await VirtualTryOnAdapter(api_key=fal_key, cost_paise=cost).try_on(
             person_image_url=person_url,
             garment_image_url=garment_url,
             category=params.get("category", "upper_body"),
@@ -122,19 +142,40 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         return data
 
     if tool_name == "hair-salon":
+        hair_desc = params.get("hair_desc")
+        if openai_key and hair_desc:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            photo_bytes = await _fetch_bytes(presign(key_in))
+            prompt = (
+                f"Change the person's hair to: {hair_desc}. "
+                "Keep the face, skin tone, clothing, pose, and background completely unchanged. "
+                "Only the hair colour and style should change."
+            )
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(photo_bytes, prompt)
+            return data
         from app.adapters.ai_tools import HairSalonAdapter
-        data, _ = await HairSalonAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).change_hair(
+        data, _ = await HairSalonAdapter(api_key=fal_key, cost_paise=cost).change_hair(
             image_url=presign(key_in),
             hair_style_image_url=params.get("hair_style_image_url"),
-            hair_colour=params.get("hair_desc"),
+            hair_colour=hair_desc,
         )
         return data
 
     if tool_name == "remix":
+        prompt = params.get("prompt", "creative remix")
+        if openai_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            photo_bytes = await _fetch_bytes(presign(params["person_key"]))
+            full_prompt = (
+                f"Creatively transform this person's photo: {prompt}. "
+                "Keep the person's face and identity clearly recognisable."
+            )
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(photo_bytes, full_prompt)
+            return data
         from app.adapters.ai_tools import RemixAdapter
-        data, _ = await RemixAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).remix(
+        data, _ = await RemixAdapter(api_key=fal_key, cost_paise=cost).remix(
             person_image_url=presign(params["person_key"]),
-            prompt=params.get("prompt", "creative remix"),
+            prompt=prompt,
             style_image_url=params.get("style_image_url"),
             accessory_image_url=params.get("accessory_image_url"),
             strength=params.get("strength", 0.85),
@@ -146,12 +187,12 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         aspect_ratio = params.get("aspect_ratio", "9:16")
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"]).generate(
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).generate(
                 prompt, aspect_ratio=aspect_ratio
             )
             return data
         from app.adapters.ai_tools import TextToImageAdapter
-        data, _ = await TextToImageAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).generate(
+        data, _ = await TextToImageAdapter(api_key=fal_key, cost_paise=cost).generate(
             prompt=prompt, aspect_ratio=aspect_ratio
         )
         return data
