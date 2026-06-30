@@ -74,14 +74,23 @@ _COST_TEXT2IMG = 200
 
 
 class FaceSwapIn(BaseModel):
-    source_photo_key: str | None = Field(default=None, description="R2 key of the user's face photo")
-    face_photo_key: str | None = Field(default=None, description="Alias for source_photo_key")
-    target_image_url: str | None = Field(default=None, description="Public URL of the target scene image")
-    target_photo_key: str | None = Field(default=None, description="R2 key of target photo (alternative to target_image_url)")
+    # source face — accept any field name Flutter might send
+    source_photo_key: str | None = Field(default=None)
+    face_photo_key: str | None = Field(default=None)
+    # target body — accept any field name Flutter might send
+    target_image_url: str | None = Field(default=None)
+    target_photo_key: str | None = Field(default=None)
+    target_body_key: str | None = Field(default=None)
+    body_photo_key: str | None = Field(default=None)
+    target_key: str | None = Field(default=None)
 
     @property
     def resolved_source_key(self) -> str | None:
         return self.source_photo_key or self.face_photo_key
+
+    @property
+    def resolved_target_key(self) -> str | None:
+        return self.target_photo_key or self.target_body_key or self.body_photo_key or self.target_key
 
 
 class ToolOut(BaseModel):
@@ -195,18 +204,18 @@ async def face_swap(
     if not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="Face swap provider not configured")
 
-    idem_key = f"tool:face-swap:{current_user.id}:{body.resolved_source_key}:{(body.target_image_url or body.target_photo_key or '')[:64]}"
+    idem_key = f"tool:face-swap:{current_user.id}:{body.resolved_source_key}:{(body.target_image_url or body.resolved_target_key or '')[:64]}"
     await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
-
-    if not body.target_image_url and not body.target_photo_key:
-        raise HTTPException(status_code=422, detail="Provide target_image_url or target_photo_key")
 
     storage = _get_storage()
     src_key = body.resolved_source_key
     if not src_key:
         raise HTTPException(status_code=422, detail="Provide source_photo_key or face_photo_key")
+    tgt_key = body.resolved_target_key
+    if not body.target_image_url and not tgt_key:
+        raise HTTPException(status_code=422, detail="Provide target_photo_key or target_body_key")
     source_url = _presign(storage, src_key)
-    target_url = body.target_image_url or _presign(storage, body.target_photo_key)
+    target_url = body.target_image_url or _presign(storage, tgt_key)
 
     from app.adapters.face_swap import FalFaceSwapAdapter
     adapter = FalFaceSwapAdapter(
