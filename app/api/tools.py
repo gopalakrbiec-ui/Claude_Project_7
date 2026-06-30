@@ -538,13 +538,15 @@ async def ai_outfit(
 
 class HairSalonIn(BaseModel):
     photo_key: str = Field(..., description="R2 key of user's photo")
-    hair_colour: str | None = Field(
-        default=None,
-        description="Colour name: black | brown | blonde | red | auburn | grey | blue | pink | purple | green",
-    )
-    hair_style_image_url: str | None = Field(
-        default=None, description="URL of a reference photo with the desired hair style"
-    )
+    # Accept free-text hair description under multiple field names
+    hair_colour: str | None = Field(default=None)
+    hair_color: str | None = Field(default=None)   # US spelling alias
+    hair_style: str | None = Field(default=None)   # combined style+colour alias
+    hair_style_image_url: str | None = Field(default=None)
+
+    @property
+    def resolved_hair_desc(self) -> str | None:
+        return self.hair_colour or self.hair_color or self.hair_style
 
 
 @router.post("/hair-salon", response_model=ToolOut)
@@ -554,7 +556,7 @@ async def hair_salon(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ToolOut:
     """Change hair colour or style. Provide colour name, style reference URL, or both."""
-    if not body.hair_colour and not body.hair_style_image_url:
+    if not body.resolved_hair_desc and not body.hair_style_image_url:
         raise HTTPException(status_code=422, detail="Provide at least hair_colour or hair_style_image_url")
 
     from app.core.config import get_settings
@@ -574,7 +576,7 @@ async def hair_salon(
         result_bytes, _ = await adapter.change_hair(
             image_url=photo_url,
             hair_style_image_url=body.hair_style_image_url,
-            hair_colour=body.hair_colour,
+            hair_colour=body.resolved_hair_desc,
         )
     except Exception:
         logger.exception("hair-salon failed for user=%s", current_user.id)

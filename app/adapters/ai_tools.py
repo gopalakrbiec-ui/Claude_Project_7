@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _STYLE_TRANSFER_MODEL = "fal-ai/flux/dev/image-to-image"   # confirmed working
 _TRYON_MODEL = "fal-ai/cat-vton"                           # confirmed working
-_HAIR_MODEL = "fal-ai/hairfast"                            # correct slug (no dash-gan)
+_HAIR_MODEL = "fal-ai/flux/dev/image-to-image"            # flux i2i — works on any photo, free text hair desc
 _BG_REPLACE_MODEL = "fal-ai/bria/background-replace"      # correct slug with slash
 _REMIX_MODEL = "fal-ai/flux/dev/image-to-image"           # confirmed working
 _TEXT2IMG_MODEL = "fal-ai/flux/schnell"                   # confirmed working
@@ -173,17 +173,29 @@ class HairSalonAdapter:
         hair_colour: str | None = None,
     ) -> tuple[bytes, int]:
         """
-        Provide either hair_style_image_url (reference image) or hair_colour (named colour).
-        Both can be supplied together.
+        Uses flux image-to-image with a hair-change prompt.
+        Accepts free text for hair_colour (e.g. "curly brown", "black wavy").
         """
+        desc = hair_colour or "natural"
+        if hair_style_image_url:
+            desc = f"{desc} style matching the reference"
+        prompt = (
+            f"Change the hair to {desc}. Keep the person's face, clothing, pose, and background "
+            "completely unchanged. Only the hair colour and style changes."
+        )
+
         async def _run() -> tuple[bytes, int]:
-            logger.info("HairSalonAdapter: colour=%s has_style_ref=%s", hair_colour, bool(hair_style_image_url))
-            args: dict = {"face_image_url": image_url}
-            if hair_style_image_url:
-                args["hair_image_url"] = hair_style_image_url
-            if hair_colour:
-                args["hair_color"] = _HAIR_COLOURS.get(hair_colour.lower(), hair_colour)
-            handler = await fal_client.submit_async(_HAIR_MODEL, arguments=args)
+            logger.info("HairSalonAdapter: prompt=%s", prompt[:80])
+            handler = await fal_client.submit_async(
+                _HAIR_MODEL,
+                arguments={
+                    "image_url": image_url,
+                    "prompt": prompt,
+                    "strength": 0.65,
+                    "num_inference_steps": 28,
+                    "guidance_scale": 3.5,
+                },
+            )
             result = await handler.get()
             url = _first_image_url(result)
             return await _download(url), self._cost_paise
