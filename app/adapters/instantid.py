@@ -80,22 +80,27 @@ class InstantIDAdapter:
             arguments: dict = {
                 "prompt": prompt,
                 "face_image_url": face_image_url,
-                "width": width,
-                "height": height,
+                "image_size": {"width": width, "height": height},
                 "num_inference_steps": 30,
                 "guidance_scale": 5.0,
-                "enable_safety_checker": True,
+                # Disabled: we run our own moderation gate before this call.
+                # The fal.ai checker blocks real faces and returns empty images.
+                "enable_safety_checker": False,
             }
             if style_image_url:
                 arguments["pose_image_url"] = style_image_url
 
             handler = await fal_client.submit_async(_INSTANTID_MODEL, arguments=arguments)
             result = await handler.get()
-            logger.info("InstantID done: request_id=%s", handler.request_id)
+            logger.info("InstantID raw result keys: %s", list(result.keys()) if isinstance(result, dict) else result)
 
+            # fal.ai returns {"images": [...]} — handle both list and single-image shapes
             images = result.get("images") or []
+            if not images and result.get("image"):
+                images = [result["image"]]
             if not images:
-                raise ProviderError("InstantID: no images in result")
+                logger.error("InstantID: unexpected result shape: %s", result)
+                raise ProviderError(f"InstantID: no images in result (keys={list(result.keys()) if isinstance(result, dict) else '?'})")
 
             import httpx
             async with httpx.AsyncClient(timeout=60.0) as client:
