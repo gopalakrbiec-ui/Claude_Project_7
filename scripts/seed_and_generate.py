@@ -404,12 +404,15 @@ async def main() -> None:
     s3 = _s3_client()
 
     async with factory() as session:
-        # Step 1: Remove all existing templates
-        logger.info("Deleting all existing templates...")
+        # Step 1: Remove all existing data (order matters — FK constraints)
+        logger.info("Clearing orders, jobs, and templates...")
+        await session.execute(text("DELETE FROM generation_jobs"))
+        await session.execute(text("DELETE FROM ledger_entries WHERE ref_type = 'order'"))
+        await session.execute(text("DELETE FROM orders"))
         await session.execute(text("DELETE FROM templates"))
         await session.execute(text("ALTER SEQUENCE templates_id_seq RESTART WITH 1"))
         await session.commit()
-        logger.info("Templates cleared.")
+        logger.info("All cleared.")
 
         # Step 2: Insert new templates + generate images
         for i, tmpl in enumerate(TEMPLATES, start=1):
