@@ -443,10 +443,10 @@ async def main() -> None:
             await session.execute(text("""
                 INSERT INTO templates
                     (name, category, theme, scene_description, image_url,
-                     base_price_paise, is_featured, active, asset_keys)
+                     base_price_paise, is_featured, active, asset_keys, language)
                 VALUES
                     (:name, :category, :theme, :scene_description, :image_url,
-                     :base_price_paise, :is_featured, true, '{}')
+                     :base_price_paise, :is_featured, true, '{}', 'hi')
             """), {
                 "name": name,
                 "category": category,
