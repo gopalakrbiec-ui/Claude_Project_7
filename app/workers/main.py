@@ -6,7 +6,7 @@ from arq.connections import RedisSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.workers.jobs import generate_content
+from app.workers.jobs import generate_content, run_tool
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +304,7 @@ class WorkerSettings:
 
     redis_settings = _redis_settings()
     max_jobs = get_settings().arq_max_jobs
-    functions = [generate_content]
+    functions = [generate_content, run_tool]
     cron_jobs: list = []
 
     on_startup = on_startup

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,211 @@ from app.workers.pipeline import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TOOL_JOB_TTL = 86400  # 24 hours
+
+
+# ---------------------------------------------------------------------------
+# Tool job — async photo-tool execution
+# ---------------------------------------------------------------------------
+
+
+async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> bytes:
+    """Run the appropriate adapter for tool_name and return result bytes."""
+    storage = ctx.get("storage_adapter")
+
+    def presign(key: str) -> str:
+        from app.adapters.storage import S3StorageAdapter
+        if isinstance(storage, S3StorageAdapter):
+            return storage.presign(key, expires_in=3600)
+        return f"fake://{key}"
+
+    key_in = params.get("photo_key")
+    fal_key = settings.gen_provider_api_key
+    openai_key = settings.openai_api_key
+
+    if tool_name == "face-swap":
+        src_url = presign(params["source_key"])
+        tgt_url = params.get("target_url_direct") or presign(params["target_key"])
+        from app.adapters.face_swap import FalFaceSwapAdapter
+        out = await FalFaceSwapAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).swap(
+            source_image_url=src_url, target_image_url=tgt_url
+        )
+        return out.media_bytes
+
+    if tool_name == "restore":
+        from app.adapters.photo_tools import PhotoRestoreAdapter
+        data, _ = await PhotoRestoreAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).restore(
+            image_url=presign(key_in)
+        )
+        return data
+
+    if tool_name == "bg-remove":
+        from app.adapters.photo_tools import BgRemoveAdapter
+        data, _ = await BgRemoveAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).remove_bg(
+            image_url=presign(key_in)
+        )
+        return data
+
+    if tool_name == "upscale":
+        from app.adapters.photo_tools import PhotoUpscaleAdapter
+        data, _ = await PhotoUpscaleAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).upscale(
+            image_url=presign(key_in), scale=params.get("scale", 4)
+        )
+        return data
+
+    if tool_name == "ai-filter":
+        style = params.get("style", "anime")
+        strength = params.get("strength", 0.75)
+        if openai_key:
+            import httpx
+            from app.adapters.openai_image import OpenAIImageAdapter
+            adapter = OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"])
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(presign(key_in))
+                resp.raise_for_status()
+                photo_bytes = resp.content
+            data, _ = await adapter.style_filter(photo_bytes, style)
+            return data
+        from app.adapters.ai_tools import StyleTransferAdapter
+        data, _ = await StyleTransferAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).apply_style(
+            image_url=presign(key_in), style=style, strength=strength
+        )
+        return data
+
+    if tool_name == "ai-background":
+        prompt = params.get("prompt", "")
+        if openai_key:
+            import httpx
+            from app.adapters.openai_image import OpenAIImageAdapter
+            adapter = OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"])
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.get(presign(key_in))
+                resp.raise_for_status()
+                photo_bytes = resp.content
+            data, _ = await adapter.bg_replace(photo_bytes, prompt)
+            return data
+        from app.adapters.ai_tools import AiBgReplaceAdapter
+        data, _ = await AiBgReplaceAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).replace_bg(
+            image_url=presign(key_in), prompt=prompt
+        )
+        return data
+
+    if tool_name == "ai-outfit":
+        person_url = presign(params["person_key"])
+        garment_url = params.get("garment_image_url") or presign(params["garment_key"])
+        from app.adapters.ai_tools import VirtualTryOnAdapter
+        data, _ = await VirtualTryOnAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).try_on(
+            person_image_url=person_url,
+            garment_image_url=garment_url,
+            category=params.get("category", "upper_body"),
+        )
+        return data
+
+    if tool_name == "hair-salon":
+        from app.adapters.ai_tools import HairSalonAdapter
+        data, _ = await HairSalonAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).change_hair(
+            image_url=presign(key_in),
+            hair_style_image_url=params.get("hair_style_image_url"),
+            hair_colour=params.get("hair_desc"),
+        )
+        return data
+
+    if tool_name == "remix":
+        from app.adapters.ai_tools import RemixAdapter
+        data, _ = await RemixAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).remix(
+            person_image_url=presign(params["person_key"]),
+            prompt=params.get("prompt", "creative remix"),
+            style_image_url=params.get("style_image_url"),
+            accessory_image_url=params.get("accessory_image_url"),
+            strength=params.get("strength", 0.85),
+        )
+        return data
+
+    if tool_name == "text-to-image":
+        prompt = params.get("prompt", "")
+        aspect_ratio = params.get("aspect_ratio", "9:16")
+        if openai_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=params["cost_paise"]).generate(
+                prompt, aspect_ratio=aspect_ratio
+            )
+            return data
+        from app.adapters.ai_tools import TextToImageAdapter
+        data, _ = await TextToImageAdapter(api_key=fal_key, cost_paise=params["cost_paise"]).generate(
+            prompt=prompt, aspect_ratio=aspect_ratio
+        )
+        return data
+
+    raise ValueError(f"Unknown tool: {tool_name}")
+
+
+async def run_tool(
+    ctx: dict,
+    *,
+    job_id: str,
+    tool_name: str,
+    user_id: int,
+    cost_paise: int,
+    params: dict,
+) -> None:
+    """
+    Arq job: run an AI photo tool and publish result to Redis.
+
+    Redis key: tool:job:{job_id}
+    Value: JSON {status, result_url?, cost_paise, error?}
+    TTL: 24 h
+    """
+    from app.core.redis import get_redis
+    from app.core.config import get_settings
+
+    redis = get_redis()
+    redis_key = f"tool:job:{job_id}"
+
+    await redis.set(
+        redis_key,
+        json.dumps({"status": "processing", "cost_paise": cost_paise}),
+        ex=_TOOL_JOB_TTL,
+    )
+
+    try:
+        settings = get_settings()
+        storage = ctx.get("storage_adapter")
+
+        result_bytes = await _dispatch_tool(ctx, settings, tool_name, params)
+
+        # Apply watermark for all tools except bg-remove (transparent PNG)
+        if tool_name != "bg-remove":
+            import asyncio
+            from app.workers.pipeline import _apply_watermark
+            result_bytes = await asyncio.to_thread(_apply_watermark, result_bytes)
+
+        # Upload result
+        result_key = f"tool-results/{user_id}/{tool_name}/{uuid.uuid4()}.png"
+        await storage.upload(result_key, result_bytes, content_type="image/png")
+
+        # Build result URL
+        from app.adapters.storage import S3StorageAdapter
+        if isinstance(storage, S3StorageAdapter):
+            result_url = storage.presign(result_key, expires_in=3600)
+        else:
+            result_url = f"fake://{result_key}"
+
+        await redis.set(
+            redis_key,
+            json.dumps({"status": "done", "result_url": result_url, "cost_paise": cost_paise}),
+            ex=_TOOL_JOB_TTL,
+        )
+        logger.info("run_tool: done job_id=%s tool=%s user=%s", job_id, tool_name, user_id)
+
+    except Exception as exc:
+        logger.exception("run_tool: failed job_id=%s tool=%s", job_id, tool_name)
+        await redis.set(
+            redis_key,
+            json.dumps({"status": "failed", "error": str(exc)[:200], "cost_paise": cost_paise}),
+            ex=_TOOL_JOB_TTL,
+        )
+        raise
 
 
 async def generate_content(ctx: dict, *, order_id: int) -> None:

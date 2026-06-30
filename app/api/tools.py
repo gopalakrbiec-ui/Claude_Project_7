@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 """
-AI photo-tool endpoints — instant, synchronous transformations.
+AI photo-tool endpoints — async job pattern.
 
-POST /tools/face-swap   — put the user's face into a template scene
-POST /tools/restore     — deblur + enhance an old/low-quality photo
-POST /tools/bg-remove   — remove photo background (transparent PNG)
-POST /tools/upscale     — 4× Real-ESRGAN upscale
+POST /tools/<name>      → charge credits, enqueue arq job, return {job_id, status, cost_paise}
+GET  /tools/status/{id} → poll job status from Redis; returns result_url when done
 
-All endpoints:
+All POST endpoints:
   • require a logged-in user
-  • deduct credits BEFORE calling the provider (same pattern as orders)
-  • upload the result to R2 and return a short-lived presigned URL
-  • apply the Yadein watermark to the output (except bg-remove)
+  • deduct credits BEFORE enqueuing (same pattern as orders)
+  • return immediately so Railway's 60 s timeout is never hit
 """
 
+import json
 import logging
 import uuid
 from typing import Annotated
@@ -55,7 +53,8 @@ async def list_tools() -> dict:
     """Returns the catalog of AI tools for the center button grid in Flutter."""
     return {"tools": _TOOL_CATALOG}
 
-# Cost per tool in paise (can later be moved to config / DB)
+
+# Cost per tool in paise
 _COST_FACE_SWAP = 300
 _COST_RESTORE = 200
 _COST_BG_REMOVE = 150
@@ -76,11 +75,9 @@ _COST_TEXT2IMG = 200
 class FaceSwapIn(BaseModel):
     model_config = {"extra": "allow"}
 
-    # Known source-face field names
     source_photo_key: str | None = Field(default=None)
     face_photo_key: str | None = Field(default=None)
-    photo_key: str | None = Field(default=None)  # Flutter sends this for face
-    # Known target-body field names
+    photo_key: str | None = Field(default=None)
     target_image_url: str | None = Field(default=None)
     target_photo_key: str | None = Field(default=None)
     target_body_key: str | None = Field(default=None)
@@ -93,11 +90,9 @@ class FaceSwapIn(BaseModel):
         if known:
             return known
         extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        # Try name-based match first
         for k, v in extras.items():
             if "source" in k or "face" in k:
                 return v
-        # Last resort: first extra string value
         return next(iter(extras.values()), None)
 
     @property
@@ -106,26 +101,35 @@ class FaceSwapIn(BaseModel):
         if known:
             return known
         extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        # Try name-based match first
         for k, v in extras.items():
             if "target" in k or "body" in k:
                 return v
-        # Last resort: second extra string value (first is assumed to be source)
         values = list(extras.values())
         return values[1] if len(values) > 1 else None
 
 
-class ToolOut(BaseModel):
-    result_url: str
+class JobOut(BaseModel):
+    """Returned immediately when a tool job is enqueued."""
+    job_id: str
+    status: str = "processing"
     cost_paise: int
 
 
+class JobStatusOut(BaseModel):
+    """Returned by GET /tools/status/{job_id}."""
+    job_id: str
+    status: str          # processing | done | failed
+    cost_paise: int | None = None
+    result_url: str | None = None
+    error: str | None = None
+
+
 class RestoreIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the photo to restore (from /uploads/photo)")
+    photo_key: str = Field(..., description="R2 key of the photo to restore")
 
 
 class BgRemoveIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the photo (from /uploads/photo)")
+    photo_key: str = Field(..., description="R2 key of the photo")
 
 
 class UpscaleIn(BaseModel):
@@ -133,31 +137,115 @@ class UpscaleIn(BaseModel):
     scale: int = Field(default=4, ge=2, le=4)
 
 
+_STYLE_ALIASES: dict[str, str] = {
+    "water": "watercolour", "watercolor": "watercolour", "watercolour": "watercolour",
+    "anime": "anime", "cartoon": "anime",
+    "sketch": "sketch", "pencil": "sketch", "drawing": "sketch",
+    "oil": "oil_painting", "oil_painting": "oil_painting", "painting": "oil_painting",
+    "cinematic": "cinematic", "movie": "cinematic", "film": "cinematic",
+    "comic": "comic", "comics": "comic", "pop": "comic",
+    "ghibli": "ghibli", "studio ghibli": "ghibli",
+    "vintage": "vintage", "retro": "vintage", "old": "vintage",
+    "bollywood": "bollywood",
+    "royal": "royal",
+}
+
+
+class AiFilterIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of the user's photo")
+    style: str = Field(..., description="Style: anime | sketch | oil_painting | cinematic | watercolour | comic | ghibli | vintage | bollywood | royal")
+    strength: float = Field(default=0.75, ge=0.1, le=1.0)
+
+
+class TryOnIn(BaseModel):
+    model_config = {"extra": "allow"}
+
+    person_photo_key: str | None = Field(default=None)
+    photo_key: str | None = Field(default=None)
+    user_photo_key: str | None = Field(default=None)
+    garment_image_url: str | None = Field(default=None)
+    garment_photo_key: str | None = Field(default=None)
+    outfit_photo_key: str | None = Field(default=None)
+    clothing_photo_key: str | None = Field(default=None)
+    category: str = Field(default="upper_body")
+
+    @property
+    def resolved_person_key(self) -> str | None:
+        known = self.person_photo_key or self.photo_key or self.user_photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "person" in k or "user" in k or "photo" in k or "your" in k:
+                return v
+        return next(iter(extras.values()), None)
+
+    @property
+    def resolved_garment_key(self) -> str | None:
+        known = self.garment_photo_key or self.outfit_photo_key or self.clothing_photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "garment" in k or "outfit" in k or "cloth" in k:
+                return v
+        values = list(extras.values())
+        return values[1] if len(values) > 1 else None
+
+
+class HairSalonIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of user's photo")
+    hair_colour: str | None = Field(default=None)
+    hair_color: str | None = Field(default=None)
+    hair_style: str | None = Field(default=None)
+    hair_style_image_url: str | None = Field(default=None)
+
+    @property
+    def resolved_hair_desc(self) -> str | None:
+        return self.hair_colour or self.hair_color or self.hair_style
+
+
+class BgReplaceIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of user's photo")
+    prompt: str = Field(..., max_length=300, description="Description of the new background scene")
+
+
+class RemixIn(BaseModel):
+    model_config = {"extra": "allow"}
+
+    person_photo_key: str | None = Field(default=None)
+    photo_key: str | None = Field(default=None)
+    prompt: str | None = Field(default=None, max_length=500)
+    style: str | None = Field(default=None, max_length=500)
+    remix_style: str | None = Field(default=None, max_length=500)
+    style_image_url: str | None = Field(default=None)
+    accessory_image_url: str | None = Field(default=None)
+    strength: float = Field(default=0.85, ge=0.5, le=1.0)
+
+    @property
+    def resolved_person_key(self) -> str | None:
+        known = self.person_photo_key or self.photo_key
+        if known:
+            return known
+        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
+        for k, v in extras.items():
+            if "person" in k or "photo" in k or "user" in k:
+                return v
+        return next(iter(extras.values()), None)
+
+    @property
+    def resolved_prompt(self) -> str:
+        return self.prompt or self.style or self.remix_style or "creative remix"
+
+
+class TextToImageIn(BaseModel):
+    prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
+    aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-
-def _get_storage():
-    from app.core.config import get_settings
-    from app.adapters.storage import S3StorageAdapter, FakeStorageAdapter
-    s = get_settings()
-    if s.s3_endpoint_url and s.s3_access_key_id:
-        return S3StorageAdapter(
-            endpoint_url=str(s.s3_endpoint_url),
-            access_key_id=s.s3_access_key_id,
-            secret_access_key=s.s3_secret_access_key,
-            bucket_name=s.s3_bucket_name,
-            region=s.s3_region,
-        )
-    return FakeStorageAdapter()
-
-
-def _presign(storage, key: str) -> str:
-    from app.adapters.storage import S3StorageAdapter
-    if isinstance(storage, S3StorageAdapter):
-        return storage.presign(key, expires_in=3600)
-    return f"fake://{key}"
 
 
 async def _charge(
@@ -194,18 +282,64 @@ async def _charge(
         )
 
 
-async def _upload_result(storage, user_id: int, tool_name: str, data: bytes, content_type: str) -> str:
-    key = f"tool-results/{user_id}/{tool_name}/{uuid.uuid4()}.png"
-    await storage.upload(key, data, content_type=content_type)
-    return key
+async def _enqueue(tool_name: str, user_id: int, cost_paise: int, params: dict) -> str:
+    """Enqueue an arq run_tool job and return the job_id."""
+    import arq
+    from app.core.config import get_settings
+    from urllib.parse import urlparse
+    from arq.connections import RedisSettings
+
+    job_id = str(uuid.uuid4())
+    settings = get_settings()
+    parsed = urlparse(str(settings.redis_url))
+    pool = await arq.create_pool(RedisSettings(
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 6379,
+        database=int(parsed.path.lstrip("/") or 0),
+        password=parsed.password or None,
+        ssl=parsed.scheme in ("rediss",),
+    ))
+    try:
+        await pool.enqueue_job(
+            "run_tool",
+            job_id=job_id,
+            tool_name=tool_name,
+            user_id=user_id,
+            cost_paise=cost_paise,
+            params=params,
+            _job_id=f"tool:{job_id}",
+        )
+    finally:
+        await pool.aclose()
+
+    return job_id
 
 
-async def _download_bytes(url: str) -> bytes:
-    import httpx
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.get(url)
-        r.raise_for_status()
-        return r.content
+# ---------------------------------------------------------------------------
+# Status polling
+# ---------------------------------------------------------------------------
+
+
+@router.get("/status/{job_id}", response_model=JobStatusOut)
+async def tool_status(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> JobStatusOut:
+    """Poll the status of an async tool job."""
+    from app.core.redis import get_redis
+
+    redis = get_redis()
+    raw = await redis.get(f"tool:job:{job_id}")
+    if raw is None:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    data = json.loads(raw)
+    return JobStatusOut(
+        job_id=job_id,
+        status=data.get("status", "processing"),
+        cost_paise=data.get("cost_paise"),
+        result_url=data.get("result_url"),
+        error=data.get("error"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -213,56 +347,37 @@ async def _download_bytes(url: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/face-swap", response_model=ToolOut)
+@router.post("/face-swap", response_model=JobOut)
 async def face_swap(
     body: FaceSwapIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Swap the user's face into a template or scene image."""
-    from app.core.config import get_settings
-    settings = get_settings()
-
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Face swap provider not configured")
-
     logger.warning("face-swap body fields: %s", {k: v for k, v in body.model_dump().items() if v is not None})
     if body.model_extra:
         logger.warning("face-swap EXTRA fields: %s", body.model_extra)
 
-    idem_key = f"tool:face-swap:{current_user.id}:{body.resolved_source_key}:{(body.target_image_url or body.resolved_target_key or '')[:64]}"
-    await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
-
-    storage = _get_storage()
     src_key = body.resolved_source_key
     if not src_key:
         raise HTTPException(status_code=422, detail="Provide source_photo_key or face_photo_key")
     tgt_key = body.resolved_target_key
     if not body.target_image_url and not tgt_key:
         raise HTTPException(status_code=422, detail="Provide target_photo_key or target_body_key")
-    source_url = _presign(storage, src_key)
-    target_url = body.target_image_url or _presign(storage, tgt_key)
 
-    from app.adapters.face_swap import FalFaceSwapAdapter
-    adapter = FalFaceSwapAdapter(
-        api_key=settings.gen_provider_api_key,
-        cost_paise=_COST_FACE_SWAP,
-    )
-    try:
-        output = await adapter.swap(
-            source_image_url=source_url,
-            target_image_url=target_url,
-        )
-    except Exception:
-        logger.exception("face-swap failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Face swap failed — please try again")
+    idem_key = f"tool:face-swap:{current_user.id}:{src_key}:{(body.target_image_url or tgt_key or '')[:64]}"
+    await _charge(db, current_user, _COST_FACE_SWAP, "face-swap", idem_key)
 
-    from app.workers.pipeline import _apply_watermark
-    import asyncio
-    watermarked = await asyncio.to_thread(_apply_watermark, output.media_bytes)
+    # If target_image_url is an external URL, pass it directly; otherwise pass the R2 key
+    params: dict = {"source_key": src_key, "cost_paise": _COST_FACE_SWAP}
+    if body.target_image_url:
+        params["target_url_direct"] = body.target_image_url
+        params["target_key"] = src_key  # placeholder; worker uses target_url_direct
+    else:
+        params["target_key"] = tgt_key
 
-    key = await _upload_result(storage, current_user.id, "face-swap", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_FACE_SWAP)
+    job_id = await _enqueue("face-swap", current_user.id, _COST_FACE_SWAP, params)
+    return JobOut(job_id=job_id, cost_paise=_COST_FACE_SWAP)
 
 
 # ---------------------------------------------------------------------------
@@ -270,39 +385,17 @@ async def face_swap(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/restore", response_model=ToolOut)
+@router.post("/restore", response_model=JobOut)
 async def restore_photo(
     body: RestoreIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Restore and enhance an old or blurry photo."""
-    from app.core.config import get_settings
-    settings = get_settings()
-
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Restore provider not configured")
-
     idem_key = f"tool:restore:{current_user.id}:{body.photo_key}"
     await _charge(db, current_user, _COST_RESTORE, "restore", idem_key)
-
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    from app.adapters.photo_tools import PhotoRestoreAdapter
-    adapter = PhotoRestoreAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_RESTORE)
-    try:
-        result_bytes, _ = await adapter.restore(image_url=photo_url)
-    except Exception:
-        logger.exception("restore failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Photo restore failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-
-    key = await _upload_result(storage, current_user.id, "restore", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_RESTORE)
+    job_id = await _enqueue("restore", current_user.id, _COST_RESTORE, {"photo_key": body.photo_key, "cost_paise": _COST_RESTORE})
+    return JobOut(job_id=job_id, cost_paise=_COST_RESTORE)
 
 
 # ---------------------------------------------------------------------------
@@ -310,35 +403,17 @@ async def restore_photo(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/bg-remove", response_model=ToolOut)
+@router.post("/bg-remove", response_model=JobOut)
 async def bg_remove(
     body: BgRemoveIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Remove background from a photo. Returns transparent PNG."""
-    from app.core.config import get_settings
-    settings = get_settings()
-
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="BG remove provider not configured")
-
     idem_key = f"tool:bg-remove:{current_user.id}:{body.photo_key}"
     await _charge(db, current_user, _COST_BG_REMOVE, "bg-remove", idem_key)
-
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    from app.adapters.photo_tools import BgRemoveAdapter
-    adapter = BgRemoveAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REMOVE)
-    try:
-        result_bytes, _ = await adapter.remove_bg(image_url=photo_url)
-    except Exception:
-        logger.exception("bg-remove failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Background removal failed — please try again")
-
-    key = await _upload_result(storage, current_user.id, "bg-remove", result_bytes, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_BG_REMOVE)
+    job_id = await _enqueue("bg-remove", current_user.id, _COST_BG_REMOVE, {"photo_key": body.photo_key, "cost_paise": _COST_BG_REMOVE})
+    return JobOut(job_id=job_id, cost_paise=_COST_BG_REMOVE)
 
 
 # ---------------------------------------------------------------------------
@@ -346,99 +421,38 @@ async def bg_remove(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/upscale", response_model=ToolOut)
+@router.post("/upscale", response_model=JobOut)
 async def upscale_photo(
     body: UpscaleIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Upscale a photo up to 4× using Real-ESRGAN."""
-    from app.core.config import get_settings
-    settings = get_settings()
-
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Upscale provider not configured")
-
     idem_key = f"tool:upscale:{current_user.id}:{body.photo_key}:{body.scale}"
     await _charge(db, current_user, _COST_UPSCALE, "upscale", idem_key)
-
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    from app.adapters.photo_tools import PhotoUpscaleAdapter
-    adapter = PhotoUpscaleAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_UPSCALE)
-    try:
-        result_bytes, _ = await adapter.upscale(image_url=photo_url, scale=body.scale)
-    except Exception:
-        logger.exception("upscale failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Upscale failed — please try again")
-
-    key = await _upload_result(storage, current_user.id, "upscale", result_bytes, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_UPSCALE)
+    job_id = await _enqueue("upscale", current_user.id, _COST_UPSCALE, {"photo_key": body.photo_key, "scale": body.scale, "cost_paise": _COST_UPSCALE})
+    return JobOut(job_id=job_id, cost_paise=_COST_UPSCALE)
 
 
 # ---------------------------------------------------------------------------
-# AI Filter — style transfer (anime, sketch, oil painting, etc.)
+# AI Filter
 # ---------------------------------------------------------------------------
 
 
-_STYLE_ALIASES: dict[str, str] = {
-    "water": "watercolour", "watercolor": "watercolour", "watercolour": "watercolour",
-    "anime": "anime", "cartoon": "anime",
-    "sketch": "sketch", "pencil": "sketch", "drawing": "sketch",
-    "oil": "oil_painting", "oil_painting": "oil_painting", "painting": "oil_painting",
-    "cinematic": "cinematic", "movie": "cinematic", "film": "cinematic",
-    "comic": "comic", "comics": "comic", "pop": "comic",
-    "ghibli": "ghibli", "studio ghibli": "ghibli",
-    "vintage": "vintage", "retro": "vintage", "old": "vintage",
-    "bollywood": "bollywood",
-    "royal": "royal",
-}
-
-
-class AiFilterIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the user's photo")
-    style: str = Field(
-        ...,
-        description="Style: anime | sketch | oil_painting | cinematic | watercolour | comic | ghibli | vintage | bollywood | royal",
-    )
-    strength: float = Field(default=0.75, ge=0.1, le=1.0)
-
-
-@router.post("/ai-filter", response_model=ToolOut)
+@router.post("/ai-filter", response_model=JobOut)
 async def ai_filter(
     body: AiFilterIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
-    """Apply an artistic style filter to a photo (anime, sketch, oil painting, etc.)."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="AI filter provider not configured")
-
+) -> JobOut:
+    """Apply an artistic style filter to a photo."""
     idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
     await _charge(db, current_user, _COST_AI_FILTER, "ai-filter", idem_key)
-
     style = _STYLE_ALIASES.get(body.style.lower().strip(), body.style)
-
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    try:
-        # Always use fal.ai for style transfer (OpenAI edit is too slow; times out at 60s)
-        from app.adapters.ai_tools import StyleTransferAdapter
-        adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
-        result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=style, strength=body.strength)
-    except Exception:
-        logger.exception("ai-filter failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="AI filter failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    key = await _upload_result(storage, current_user.id, "ai-filter", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_AI_FILTER)
+    job_id = await _enqueue("ai-filter", current_user.id, _COST_AI_FILTER, {
+        "photo_key": body.photo_key, "style": style, "strength": body.strength, "cost_paise": _COST_AI_FILTER,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_AI_FILTER)
 
 
 # ---------------------------------------------------------------------------
@@ -446,61 +460,16 @@ async def ai_filter(
 # ---------------------------------------------------------------------------
 
 
-class TryOnIn(BaseModel):
-    model_config = {"extra": "allow"}
-
-    # Person photo — accept any field name Flutter might send
-    person_photo_key: str | None = Field(default=None)
-    photo_key: str | None = Field(default=None)
-    user_photo_key: str | None = Field(default=None)
-    # Garment photo — accept any field name Flutter might send
-    garment_image_url: str | None = Field(default=None)
-    garment_photo_key: str | None = Field(default=None)
-    outfit_photo_key: str | None = Field(default=None)
-    clothing_photo_key: str | None = Field(default=None)
-    category: str = Field(default="upper_body")
-
-    @property
-    def resolved_person_key(self) -> str | None:
-        known = self.person_photo_key or self.photo_key or self.user_photo_key
-        if known:
-            return known
-        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        for k, v in extras.items():
-            if "person" in k or "user" in k or "photo" in k or "your" in k:
-                return v
-        return next(iter(extras.values()), None)
-
-    @property
-    def resolved_garment_key(self) -> str | None:
-        known = self.garment_photo_key or self.outfit_photo_key or self.clothing_photo_key
-        if known:
-            return known
-        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        for k, v in extras.items():
-            if "garment" in k or "outfit" in k or "cloth" in k:
-                return v
-        values = list(extras.values())
-        return values[1] if len(values) > 1 else None
-
-
-@router.post("/ai-outfit", response_model=ToolOut)
+@router.post("/ai-outfit", response_model=JobOut)
 async def ai_outfit(
     body: TryOnIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Virtual try-on — dress the user in a garment image."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Try-on provider not configured")
-
     logger.warning("ai-outfit body: %s extras: %s",
         {k: v for k, v in body.model_dump().items() if v and k != "model_config"},
         body.model_extra)
-    idem_key = f"tool:ai-outfit:{current_user.id}:{body.resolved_person_key}:{(body.garment_image_url or body.resolved_garment_key or '')[:64]}"
-    await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
 
     person_key = body.resolved_person_key
     if not person_key:
@@ -509,27 +478,17 @@ async def ai_outfit(
     if not body.garment_image_url and not garment_key:
         raise HTTPException(status_code=422, detail="Provide garment_photo_key or outfit_photo_key")
 
-    storage = _get_storage()
-    person_url = _presign(storage, person_key)
-    garment_url = body.garment_image_url or _presign(storage, garment_key)
+    idem_key = f"tool:ai-outfit:{current_user.id}:{person_key}:{(body.garment_image_url or garment_key or '')[:64]}"
+    await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
 
-    from app.adapters.ai_tools import VirtualTryOnAdapter
-    adapter = VirtualTryOnAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TRYON)
-    try:
-        result_bytes, _ = await adapter.try_on(
-            person_image_url=person_url,
-            garment_image_url=garment_url,
-            category=body.category,
-        )
-    except Exception:
-        logger.exception("ai-outfit failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Virtual try-on failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    key = await _upload_result(storage, current_user.id, "ai-outfit", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_TRYON)
+    job_id = await _enqueue("ai-outfit", current_user.id, _COST_TRYON, {
+        "person_key": person_key,
+        "garment_key": garment_key or person_key,  # fallback; garment_image_url handled in worker
+        "garment_image_url": body.garment_image_url,
+        "category": body.category,
+        "cost_paise": _COST_TRYON,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_TRYON)
 
 
 # ---------------------------------------------------------------------------
@@ -537,57 +496,26 @@ async def ai_outfit(
 # ---------------------------------------------------------------------------
 
 
-class HairSalonIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of user's photo")
-    # Accept free-text hair description under multiple field names
-    hair_colour: str | None = Field(default=None)
-    hair_color: str | None = Field(default=None)   # US spelling alias
-    hair_style: str | None = Field(default=None)   # combined style+colour alias
-    hair_style_image_url: str | None = Field(default=None)
-
-    @property
-    def resolved_hair_desc(self) -> str | None:
-        return self.hair_colour or self.hair_color or self.hair_style
-
-
-@router.post("/hair-salon", response_model=ToolOut)
+@router.post("/hair-salon", response_model=JobOut)
 async def hair_salon(
     body: HairSalonIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
-    """Change hair colour or style. Provide colour name, style reference URL, or both."""
+) -> JobOut:
+    """Change hair colour or style."""
     if not body.resolved_hair_desc and not body.hair_style_image_url:
         raise HTTPException(status_code=422, detail="Provide at least hair_colour or hair_style_image_url")
-
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Hair salon provider not configured")
 
     idem_key = f"tool:hair:{current_user.id}:{body.photo_key}:{body.hair_colour}:{body.hair_style_image_url}"
     await _charge(db, current_user, _COST_HAIR, "hair-salon", idem_key)
 
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    from app.adapters.ai_tools import HairSalonAdapter
-    adapter = HairSalonAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_HAIR)
-    try:
-        result_bytes, _ = await adapter.change_hair(
-            image_url=photo_url,
-            hair_style_image_url=body.hair_style_image_url,
-            hair_colour=body.resolved_hair_desc,
-        )
-    except Exception:
-        logger.exception("hair-salon failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Hair salon failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    key = await _upload_result(storage, current_user.id, "hair-salon", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_HAIR)
+    job_id = await _enqueue("hair-salon", current_user.id, _COST_HAIR, {
+        "photo_key": body.photo_key,
+        "hair_desc": body.resolved_hair_desc,
+        "hair_style_image_url": body.hair_style_image_url,
+        "cost_paise": _COST_HAIR,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_HAIR)
 
 
 # ---------------------------------------------------------------------------
@@ -595,93 +523,34 @@ async def hair_salon(
 # ---------------------------------------------------------------------------
 
 
-class BgReplaceIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of user's photo")
-    prompt: str = Field(..., max_length=300, description="Description of the new background scene")
-
-
-@router.post("/ai-background", response_model=ToolOut)
+@router.post("/ai-background", response_model=JobOut)
 async def ai_background(
     body: BgReplaceIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Replace photo background with an AI-generated scene."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="AI background provider not configured")
-
     idem_key = f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}"
     await _charge(db, current_user, _COST_BG_REPLACE, "ai-background", idem_key)
 
-    storage = _get_storage()
-    photo_url = _presign(storage, body.photo_key)
-
-    try:
-        # Always use fal.ai for bg-replace (OpenAI edit is too slow; times out at 60s)
-        from app.adapters.ai_tools import AiBgReplaceAdapter
-        adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
-        result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
-    except Exception:
-        logger.exception("ai-background failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="AI background failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    key = await _upload_result(storage, current_user.id, "ai-background", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_BG_REPLACE)
+    job_id = await _enqueue("ai-background", current_user.id, _COST_BG_REPLACE, {
+        "photo_key": body.photo_key, "prompt": body.prompt, "cost_paise": _COST_BG_REPLACE,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_BG_REPLACE)
 
 
 # ---------------------------------------------------------------------------
-# Remix — multi-image fusion (person + outfit + accessory)
+# Remix
 # ---------------------------------------------------------------------------
 
 
-class RemixIn(BaseModel):
-    model_config = {"extra": "allow"}
-
-    # Person photo — accept any field name
-    person_photo_key: str | None = Field(default=None)
-    photo_key: str | None = Field(default=None)
-    # Prompt — accept style/remix_style as alias
-    prompt: str | None = Field(default=None, max_length=500)
-    style: str | None = Field(default=None, max_length=500)
-    remix_style: str | None = Field(default=None, max_length=500)
-    # Optional references
-    style_image_url: str | None = Field(default=None)
-    accessory_image_url: str | None = Field(default=None)
-    strength: float = Field(default=0.85, ge=0.5, le=1.0)
-
-    @property
-    def resolved_person_key(self) -> str | None:
-        known = self.person_photo_key or self.photo_key
-        if known:
-            return known
-        extras = {k: v for k, v in (self.model_extra or {}).items() if v and isinstance(v, str)}
-        for k, v in extras.items():
-            if "person" in k or "photo" in k or "user" in k:
-                return v
-        return next(iter(extras.values()), None)
-
-    @property
-    def resolved_prompt(self) -> str:
-        return self.prompt or self.style or self.remix_style or "creative remix"
-
-
-@router.post("/remix", response_model=ToolOut)
+@router.post("/remix", response_model=JobOut)
 async def remix(
     body: RemixIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """AI Mix / Remix — fuse person photo with outfit and accessory references."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Remix provider not configured")
-
     person_key = body.resolved_person_key
     if not person_key:
         raise HTTPException(status_code=422, detail="Provide person_photo_key or photo_key")
@@ -689,71 +558,33 @@ async def remix(
     idem_key = f"tool:remix:{current_user.id}:{person_key}:{body.resolved_prompt[:64]}"
     await _charge(db, current_user, _COST_REMIX, "remix", idem_key)
 
-    storage = _get_storage()
-    person_url = _presign(storage, person_key)
-
-    from app.adapters.ai_tools import RemixAdapter
-    adapter = RemixAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_REMIX)
-    try:
-        result_bytes, _ = await adapter.remix(
-            person_image_url=person_url,
-            prompt=body.resolved_prompt,
-            style_image_url=body.style_image_url,
-            accessory_image_url=body.accessory_image_url,
-            strength=body.strength,
-        )
-    except Exception:
-        logger.exception("remix failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Remix failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    key = await _upload_result(storage, current_user.id, "remix", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_REMIX)
+    job_id = await _enqueue("remix", current_user.id, _COST_REMIX, {
+        "person_key": person_key,
+        "prompt": body.resolved_prompt,
+        "style_image_url": body.style_image_url,
+        "accessory_image_url": body.accessory_image_url,
+        "strength": body.strength,
+        "cost_paise": _COST_REMIX,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_REMIX)
 
 
 # ---------------------------------------------------------------------------
-# Text to Image — chat prompt → image
+# Text to Image
 # ---------------------------------------------------------------------------
 
 
-class TextToImageIn(BaseModel):
-    prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
-    aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
-
-
-@router.post("/text-to-image", response_model=ToolOut)
+@router.post("/text-to-image", response_model=JobOut)
 async def text_to_image(
     body: TextToImageIn,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> ToolOut:
+) -> JobOut:
     """Generate an image from a text prompt (freeform chat-to-image)."""
-    from app.core.config import get_settings
-    settings = get_settings()
-    if not settings.openai_api_key and not settings.gen_provider_api_key:
-        raise HTTPException(status_code=503, detail="Text-to-image provider not configured")
-
     idem_key = f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}"
     await _charge(db, current_user, _COST_TEXT2IMG, "text-to-image", idem_key)
 
-    try:
-        if settings.openai_api_key:
-            from app.adapters.openai_image import OpenAIImageAdapter
-            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_TEXT2IMG)
-            result_bytes, _ = await adapter.generate(body.prompt, aspect_ratio=body.aspect_ratio)
-        else:
-            from app.adapters.ai_tools import TextToImageAdapter
-            adapter = TextToImageAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TEXT2IMG)
-            result_bytes, _ = await adapter.generate(prompt=body.prompt, aspect_ratio=body.aspect_ratio)
-    except Exception:
-        logger.exception("text-to-image failed for user=%s", current_user.id)
-        raise HTTPException(status_code=500, detail="Text to image failed — please try again")
-
-    import asyncio
-    from app.workers.pipeline import _apply_watermark
-    watermarked = await asyncio.to_thread(_apply_watermark, result_bytes)
-    storage = _get_storage()
-    key = await _upload_result(storage, current_user.id, "text-to-image", watermarked, "image/png")
-    return ToolOut(result_url=_presign(storage, key), cost_paise=_COST_TEXT2IMG)
+    job_id = await _enqueue("text-to-image", current_user.id, _COST_TEXT2IMG, {
+        "prompt": body.prompt, "aspect_ratio": body.aspect_ratio, "cost_paise": _COST_TEXT2IMG,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_TEXT2IMG)
