@@ -31,6 +31,30 @@ from app.services.credits import CreditsService, InsufficientBalanceError, Ledge
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
 
+
+# ---------------------------------------------------------------------------
+# Tool discovery — Flutter reads this to build the center AI button grid
+# ---------------------------------------------------------------------------
+
+_TOOL_CATALOG = [
+    {"id": "face-swap",     "name": "Face Swap",        "icon": "face_retouching_natural", "cost_paise": 300,  "category": "portrait"},
+    {"id": "ai-filter",     "name": "AI Filter",        "icon": "auto_awesome",            "cost_paise": 200,  "category": "style"},
+    {"id": "bg-remove",     "name": "BG Remove",        "icon": "layers_clear",            "cost_paise": 150,  "category": "edit"},
+    {"id": "ai-background", "name": "AI Background",    "icon": "landscape",               "cost_paise": 200,  "category": "edit"},
+    {"id": "upscale",       "name": "Upscale HD",       "icon": "hd",                      "cost_paise": 150,  "category": "enhance"},
+    {"id": "restore",       "name": "Photo Restore",    "icon": "restore",                 "cost_paise": 200,  "category": "enhance"},
+    {"id": "ai-outfit",     "name": "AI Outfit",        "icon": "checkroom",               "cost_paise": 400,  "category": "fashion"},
+    {"id": "hair-salon",    "name": "Hair Salon",        "icon": "content_cut",             "cost_paise": 200,  "category": "fashion"},
+    {"id": "remix",         "name": "Remix",             "icon": "shuffle",                 "cost_paise": 500,  "category": "creative"},
+    {"id": "text-to-image", "name": "Text to Image",    "icon": "text_fields",             "cost_paise": 200,  "category": "creative"},
+]
+
+
+@router.get("", summary="List all available AI tools")
+async def list_tools() -> dict:
+    """Returns the catalog of AI tools for the center button grid in Flutter."""
+    return {"tools": _TOOL_CATALOG}
+
 # Cost per tool in paise (can later be moved to config / DB)
 _COST_FACE_SWAP = 300
 _COST_RESTORE = 200
@@ -132,6 +156,14 @@ async def _upload_result(storage, user_id: int, tool_name: str, data: bytes, con
     key = f"tool-results/{user_id}/{tool_name}/{uuid.uuid4()}.png"
     await storage.upload(key, data, content_type=content_type)
     return key
+
+
+async def _download_bytes(url: str) -> bytes:
+    import httpx
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        return r.content
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +347,7 @@ async def ai_filter(
     """Apply an artistic style filter to a photo (anime, sketch, oil painting, etc.)."""
     from app.core.config import get_settings
     settings = get_settings()
-    if not settings.gen_provider_api_key:
+    if not settings.openai_api_key and not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="AI filter provider not configured")
 
     idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
@@ -323,11 +355,17 @@ async def ai_filter(
 
     storage = _get_storage()
     photo_url = _presign(storage, body.photo_key)
+    photo_bytes = await _download_bytes(photo_url)
 
-    from app.adapters.ai_tools import StyleTransferAdapter
-    adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
     try:
-        result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=body.style, strength=body.strength)
+        if settings.openai_api_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_AI_FILTER)
+            result_bytes, _ = await adapter.style_filter(photo_bytes, style=body.style)
+        else:
+            from app.adapters.ai_tools import StyleTransferAdapter
+            adapter = StyleTransferAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_AI_FILTER)
+            result_bytes, _ = await adapter.apply_style(image_url=photo_url, style=body.style, strength=body.strength)
     except Exception:
         logger.exception("ai-filter failed for user=%s", current_user.id)
         raise HTTPException(status_code=500, detail="AI filter failed — please try again")
@@ -462,7 +500,7 @@ async def ai_background(
     """Replace photo background with an AI-generated scene."""
     from app.core.config import get_settings
     settings = get_settings()
-    if not settings.gen_provider_api_key:
+    if not settings.openai_api_key and not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="AI background provider not configured")
 
     idem_key = f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}"
@@ -471,10 +509,17 @@ async def ai_background(
     storage = _get_storage()
     photo_url = _presign(storage, body.photo_key)
 
-    from app.adapters.ai_tools import AiBgReplaceAdapter
-    adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
+    photo_bytes = await _download_bytes(photo_url)
+
     try:
-        result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
+        if settings.openai_api_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_BG_REPLACE)
+            result_bytes, _ = await adapter.bg_replace(photo_bytes, bg_prompt=body.prompt)
+        else:
+            from app.adapters.ai_tools import AiBgReplaceAdapter
+            adapter = AiBgReplaceAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_BG_REPLACE)
+            result_bytes, _ = await adapter.replace_bg(image_url=photo_url, prompt=body.prompt)
     except Exception:
         logger.exception("ai-background failed for user=%s", current_user.id)
         raise HTTPException(status_code=500, detail="AI background failed — please try again")
@@ -557,16 +602,21 @@ async def text_to_image(
     """Generate an image from a text prompt (freeform chat-to-image)."""
     from app.core.config import get_settings
     settings = get_settings()
-    if not settings.gen_provider_api_key:
+    if not settings.openai_api_key and not settings.gen_provider_api_key:
         raise HTTPException(status_code=503, detail="Text-to-image provider not configured")
 
     idem_key = f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}"
     await _charge(db, current_user, _COST_TEXT2IMG, "text-to-image", idem_key)
 
-    from app.adapters.ai_tools import TextToImageAdapter
-    adapter = TextToImageAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TEXT2IMG)
     try:
-        result_bytes, _ = await adapter.generate(prompt=body.prompt, aspect_ratio=body.aspect_ratio)
+        if settings.openai_api_key:
+            from app.adapters.openai_image import OpenAIImageAdapter
+            adapter = OpenAIImageAdapter(api_key=settings.openai_api_key, cost_paise=_COST_TEXT2IMG)
+            result_bytes, _ = await adapter.generate(body.prompt, aspect_ratio=body.aspect_ratio)
+        else:
+            from app.adapters.ai_tools import TextToImageAdapter
+            adapter = TextToImageAdapter(api_key=settings.gen_provider_api_key, cost_paise=_COST_TEXT2IMG)
+            result_bytes, _ = await adapter.generate(prompt=body.prompt, aspect_ratio=body.aspect_ratio)
     except Exception:
         logger.exception("text-to-image failed for user=%s", current_user.id)
         raise HTTPException(status_code=500, detail="Text to image failed — please try again")
