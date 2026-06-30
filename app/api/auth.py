@@ -20,17 +20,14 @@ from app.services.auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _pwd_context():
-    from passlib.context import CryptContext
-    return CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def _hash_password(password: str) -> str:
-    return _pwd_context().hash(password)
+    import bcrypt
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def _verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context().verify(plain, hashed)
+    import bcrypt
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def _token_response(user: User, is_new: bool) -> dict:
