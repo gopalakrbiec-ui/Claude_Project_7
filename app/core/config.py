@@ -70,8 +70,12 @@ class Settings(BaseSettings):
     )
     gen_provider_api_key: str = Field(default="")
 
-    # OpenAI — gpt-image-1 for ai-filter, bg-replace, text-to-image tools
+    # OpenAI — image generation for tools and templates
     openai_api_key: str = Field(default="")
+    openai_image_model: str = Field(
+        default="gpt-image-1",
+        description="OpenAI image model ID, e.g. gpt-image-1 or gpt-image-1.5",
+    )
 
 
     # Together AI (free Flux Schnell with API key)

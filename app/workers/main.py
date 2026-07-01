@@ -48,8 +48,9 @@ def _build_generation_providers(settings) -> tuple:
             api_key=api_key,
             cost_paise=settings.gen_image_cost_paise,
             timeout_seconds=settings.gen_image_timeout_seconds,
+            model=settings.openai_image_model,
         )
-        logger.info("Generation provider: openai/gpt-image-1")
+        logger.info("Generation provider: openai/%s", settings.openai_image_model)
         return image_provider, FakeVideoGenerationAdapter()
 
     if provider == "fal":

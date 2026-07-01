@@ -50,6 +50,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     key_in = params.get("photo_key")
     fal_key = settings.gen_provider_api_key
     openai_key = settings.openai_api_key
+    openai_model = settings.openai_image_model
     cost = params["cost_paise"]
 
     # ── OpenAI gpt-image-1 tools (fal.ai fallback when key not set) ─────────
@@ -59,7 +60,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
             photo_bytes = await _fetch_bytes(presign(key_in))
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).style_filter(photo_bytes, style)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).style_filter(photo_bytes, style)
             return data
         from app.adapters.ai_tools import StyleTransferAdapter
         data, _ = await StyleTransferAdapter(api_key=fal_key, cost_paise=cost).apply_style(
@@ -72,7 +73,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
             photo_bytes = await _fetch_bytes(presign(key_in))
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).bg_replace(photo_bytes, prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).bg_replace(photo_bytes, prompt)
             return data
         from app.adapters.ai_tools import AiBgReplaceAdapter
         data, _ = await AiBgReplaceAdapter(api_key=fal_key, cost_paise=cost).replace_bg(
@@ -92,7 +93,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 "Keep the person's face, skin tone, body pose, and background unchanged. "
                 "Only replace the clothing with the outfit shown."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(
                 photo_bytes, prompt, mask_bytes=None
             )
             return data
@@ -115,7 +116,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 "Keep the face, skin tone, clothing, pose, and background completely unchanged. "
                 "Only the hair colour and style should change."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(photo_bytes, prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(photo_bytes, prompt)
             return data
         from app.adapters.ai_tools import HairSalonAdapter
         data, _ = await HairSalonAdapter(api_key=fal_key, cost_paise=cost).change_hair(
@@ -134,7 +135,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 f"Creatively transform this person's photo: {prompt}. "
                 "Keep the person's face and identity clearly recognisable."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).edit(photo_bytes, full_prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(photo_bytes, full_prompt)
             return data
         from app.adapters.ai_tools import RemixAdapter
         data, _ = await RemixAdapter(api_key=fal_key, cost_paise=cost).remix(
@@ -151,7 +152,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         aspect_ratio = params.get("aspect_ratio", "9:16")
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost).generate(
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).generate(
                 prompt, aspect_ratio=aspect_ratio
             )
             return data

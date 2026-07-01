@@ -72,11 +72,13 @@ class OpenAIImageAdapter:
         cost_paise: int = 200,
         timeout_seconds: float = 120.0,
         quality: Literal["low", "medium", "high", "auto"] = "medium",
+        model: str = "gpt-image-1",
     ) -> None:
         self._api_key = api_key
         self._cost_paise = cost_paise
         self._timeout_seconds = timeout_seconds
         self._quality = quality
+        self._model = model
 
     def _headers(self) -> dict:
         return {
@@ -94,7 +96,7 @@ class OpenAIImageAdapter:
                     f"{_BASE}/images/generations",
                     headers=self._headers(),
                     json={
-                        "model": "gpt-image-1",
+                        "model": self._model,
                         "prompt": prompt,
                         "n": 1,
                         "size": size,
@@ -119,21 +121,34 @@ class OpenAIImageAdapter:
         mask_bytes: bytes | None = None,
     ) -> tuple[bytes, int]:
         """Edit an image using a text prompt (optionally with a mask for inpainting)."""
+        return await self.edit_multi([image_bytes], prompt, mask_bytes=mask_bytes)
 
+    async def edit_multi(
+        self,
+        images: list[bytes],
+        prompt: str,
+        *,
+        mask_bytes: bytes | None = None,
+    ) -> tuple[bytes, int]:
+        """
+        Edit with multiple input images (template + user photo).
+        OpenAI composites all images guided by the prompt.
+        images[0] = template/background, images[1] = user photo (face/person).
+        """
         async def _run() -> tuple[bytes, int]:
-            logger.info("OpenAI edit: prompt=%s…", prompt[:60])
+            logger.info("OpenAI edit_multi: images=%d prompt=%s…", len(images), prompt[:60])
 
-            # OpenAI edits requires PNG; convert if necessary
-            png_bytes = _ensure_png(image_bytes)
-            files: dict = {
-                "model": (None, "gpt-image-1"),
-                "prompt": (None, prompt),
-                "n": (None, "1"),
-                "quality": (None, self._quality),
-                "image": ("image.png", png_bytes, "image/png"),
-            }
+            # Build multipart — each image is a separate "image[]" field
+            files: list[tuple[str, tuple]] = [
+                ("model", (None, self._model)),
+                ("prompt", (None, prompt)),
+                ("n", (None, "1")),
+                ("quality", (None, self._quality)),
+            ]
+            for i, img in enumerate(images):
+                files.append(("image[]", (f"image_{i}.png", _ensure_png(img), "image/png")))
             if mask_bytes:
-                files["mask"] = ("mask.png", _ensure_png(mask_bytes), "image/png")
+                files.append(("mask", ("mask.png", _ensure_png(mask_bytes), "image/png")))
 
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 resp = await client.post(
@@ -145,10 +160,10 @@ class OpenAIImageAdapter:
                 data = resp.json()
 
             image_out = await self._extract_bytes(data, None)
-            logger.info("OpenAI edit: done, %d bytes", len(image_out))
+            logger.info("OpenAI edit_multi: done, %d bytes", len(image_out))
             return image_out, self._cost_paise
 
-        return await with_timeout(_run(), seconds=self._timeout_seconds, label="OpenAIImageAdapter.edit")
+        return await with_timeout(_run(), seconds=self._timeout_seconds, label="OpenAIImageAdapter.edit_multi")
 
     async def style_filter(self, image_bytes: bytes, style: str) -> tuple[bytes, int]:
         """Apply an artistic style to the given image."""
@@ -204,9 +219,13 @@ class OpenAIImageAdapter:
 
 class OpenAIGenerationAdapter:
     """
-    Implements GenerationProvider using OpenAI gpt-image-1 (text-to-image).
+    Implements GenerationProvider using OpenAI gpt-image-1 (text-to-image + edit).
     Drop-in replacement for fal.ai in the order/template pipeline.
     Set GEN_PROVIDER=openai in Railway env to activate.
+
+    When both a template image and user photo are available,
+    generate_with_context() uses the edit API to composite the user's
+    face directly into the template frame — much better than text-only generation.
     """
 
     def __init__(
@@ -216,6 +235,7 @@ class OpenAIGenerationAdapter:
         cost_paise: int = 250,
         timeout_seconds: float = 120.0,
         quality: Literal["low", "medium", "high", "auto"] = "medium",
+        model: str = "gpt-image-1",
         aspect_ratio: str = "9:16",
     ) -> None:
         self._adapter = OpenAIImageAdapter(
@@ -223,7 +243,9 @@ class OpenAIGenerationAdapter:
             cost_paise=cost_paise,
             timeout_seconds=timeout_seconds,
             quality=quality,
+            model=model,
         )
+        self._model = model
         self._aspect_ratio = aspect_ratio
 
     async def generate(self, prompt: str) -> "GenerationOutput":
@@ -232,7 +254,58 @@ class OpenAIGenerationAdapter:
         return GenerationOutput(
             media_bytes=image_bytes,
             cost_paise=cost,
-            provider_name="openai/gpt-image-1",
+            provider_name=f"openai/{self._model}",
             media_type="image",
-            model_id="gpt-image-1",
+            model_id=self._model,
+        )
+
+    async def generate_with_context(
+        self,
+        prompt: str,
+        *,
+        template_image_url: str | None = None,
+        face_image_url: str | None = None,
+    ) -> "GenerationOutput":
+        """
+        Use the edit API with template + user photo when available.
+        Falls back to text-only generate() if no images are provided.
+        """
+        from app.adapters.generation import GenerationOutput
+
+        images: list[bytes] = []
+
+        if template_image_url or face_image_url:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                if template_image_url:
+                    r = await client.get(template_image_url)
+                    r.raise_for_status()
+                    images.append(r.content)
+                if face_image_url:
+                    r = await client.get(face_image_url)
+                    r.raise_for_status()
+                    images.append(r.content)
+
+        if not images:
+            return await self.generate(prompt)
+
+        # Build an explicit compositing prompt so the model understands the intent
+        composite_prompt = (
+            f"{prompt}\n\n"
+            "Use the first image as the fixed template/background — preserve its layout, "
+            "text, decorative elements, and colour scheme exactly. "
+            + (
+                "Place the person from the second image into the portrait frame in the template. "
+                "Match lighting, shadows, and perspective to the template. "
+                if face_image_url else ""
+            )
+            + "Return only the final composited image."
+        )
+
+        image_bytes, cost = await self._adapter.edit_multi(images, composite_prompt)
+        return GenerationOutput(
+            media_bytes=image_bytes,
+            cost_paise=cost,
+            provider_name=f"openai/{self._model}",
+            media_type="image",
+            model_id=self._model,
         )

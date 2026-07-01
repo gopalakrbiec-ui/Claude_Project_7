@@ -155,9 +155,18 @@ async def run_generate(
 
     t0 = time.monotonic()
 
-    # If provider supports face-in-scene and user uploaded a photo, use it
+    # Use richer context when the provider supports it
+    from app.adapters.openai_image import OpenAIGenerationAdapter
     from app.adapters.instantid import InstantIDAdapter
-    if face_image_url and isinstance(generation_provider, InstantIDAdapter):
+
+    if isinstance(generation_provider, OpenAIGenerationAdapter):
+        # Pass template + face images so gpt-image-1 composites them directly
+        output = await generation_provider.generate_with_context(
+            prompt_result.generation_prompt,
+            template_image_url=template_image_url,
+            face_image_url=face_image_url,
+        )
+    elif face_image_url and isinstance(generation_provider, InstantIDAdapter):
         output = await generation_provider.generate_with_face(
             prompt=prompt_result.generation_prompt,
             face_image_url=face_image_url,
