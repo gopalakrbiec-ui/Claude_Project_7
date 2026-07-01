@@ -35,12 +35,13 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 # ---------------------------------------------------------------------------
 
 _TOOL_CATALOG = [
-    {"id": "ai-filter",     "name": "AI Filter",        "icon": "auto_awesome",            "cost_paise": 200,  "category": "style"},
-    {"id": "ai-background", "name": "AI Background",    "icon": "landscape",               "cost_paise": 200,  "category": "edit"},
-    {"id": "ai-outfit",     "name": "AI Outfit",        "icon": "checkroom",               "cost_paise": 400,  "category": "fashion"},
-    {"id": "hair-salon",    "name": "Hair Salon",        "icon": "content_cut",             "cost_paise": 200,  "category": "fashion"},
-    {"id": "remix",         "name": "Remix",             "icon": "shuffle",                 "cost_paise": 500,  "category": "creative"},
-    {"id": "text-to-image", "name": "Text to Image",    "icon": "text_fields",             "cost_paise": 200,  "category": "creative"},
+    {"id": "ai-filter",       "name": "AI Filter",        "icon": "auto_awesome",  "cost_paise": 200,  "category": "style"},
+    {"id": "ai-background",   "name": "AI Background",    "icon": "landscape",     "cost_paise": 200,  "category": "edit"},
+    {"id": "ai-outfit",       "name": "AI Outfit",        "icon": "checkroom",     "cost_paise": 400,  "category": "fashion"},
+    {"id": "hair-salon",      "name": "Hair Salon",       "icon": "content_cut",   "cost_paise": 200,  "category": "fashion"},
+    {"id": "remix",           "name": "Remix",            "icon": "shuffle",       "cost_paise": 500,  "category": "creative"},
+    {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 200,  "category": "creative"},
+    {"id": "animate-photo",   "name": "Animate Photo",   "icon": "play_circle",   "cost_paise": 2500, "category": "video"},
 ]
 
 
@@ -57,6 +58,7 @@ _COST_HAIR = 200
 _COST_BG_REPLACE = 200
 _COST_REMIX = 500
 _COST_TEXT2IMG = 200
+_COST_ANIMATE = 2500
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +186,13 @@ class RemixIn(BaseModel):
 class TextToImageIn(BaseModel):
     prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
     aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
+
+
+class AnimatePhotoIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of the user's photo to animate")
+    prompt: str = Field(default="gentle motion, cinematic", max_length=300, description="Optional motion description")
+    duration: str = Field(default="5", description="Clip length in seconds: 5 or 10")
+    aspect_ratio: str = Field(default="9:16", description="9:16 | 16:9 | 1:1")
 
 
 # ---------------------------------------------------------------------------
@@ -439,3 +448,27 @@ async def text_to_image(
         "prompt": body.prompt, "aspect_ratio": body.aspect_ratio, "cost_paise": _COST_TEXT2IMG,
     })
     return JobOut(job_id=job_id, cost_paise=_COST_TEXT2IMG)
+
+
+# ---------------------------------------------------------------------------
+# Animate Photo
+# ---------------------------------------------------------------------------
+
+
+@router.post("/animate-photo", response_model=JobOut)
+async def animate_photo(
+    body: AnimatePhotoIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JobOut:
+    """Animate a still photo into a short video clip using Kling via fal.ai."""
+    idem_key = f"tool:animate:{current_user.id}:{body.photo_key}:{body.duration}"
+    await _charge(db, current_user, _COST_ANIMATE, "animate-photo", idem_key)
+    job_id = await _enqueue("animate-photo", current_user.id, _COST_ANIMATE, {
+        "photo_key": body.photo_key,
+        "prompt": body.prompt,
+        "duration": body.duration,
+        "aspect_ratio": body.aspect_ratio,
+        "cost_paise": _COST_ANIMATE,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_ANIMATE)

@@ -162,6 +162,23 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         )
         return data
 
+    if tool_name == "animate-photo":
+        from app.adapters.fal import FalVideoAdapter
+        photo_url = presign(key_in)
+        prompt = params.get("prompt", "gentle motion, cinematic")
+        duration = params.get("duration", "5")
+        aspect_ratio = params.get("aspect_ratio", "9:16")
+        adapter = FalVideoAdapter(
+            api_key=fal_key,
+            model_id=settings.gen_video_model,
+            cost_paise=cost,
+            timeout_seconds=settings.gen_video_timeout_seconds,
+        )
+        output = await adapter.generate_from_image(
+            prompt, image_url=photo_url, duration=duration, aspect_ratio=aspect_ratio
+        )
+        return output.media_bytes
+
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
@@ -199,15 +216,19 @@ async def run_tool(
 
         result_bytes = await _dispatch_tool(ctx, settings, tool_name, params)
 
-        # Apply watermark for all tools except bg-remove (transparent PNG)
-        if tool_name != "bg-remove":
+        # Video tools: skip watermark, use mp4 extension
+        is_video = tool_name in ("animate-photo",)
+
+        if not is_video and tool_name != "bg-remove":
             import asyncio
             from app.workers.pipeline import _apply_watermark
             result_bytes = await asyncio.to_thread(_apply_watermark, result_bytes)
 
         # Upload result
-        result_key = f"tool-results/{user_id}/{tool_name}/{uuid.uuid4()}.png"
-        await storage.upload(result_key, result_bytes, content_type="image/png")
+        ext = "mp4" if is_video else "png"
+        content_type = "video/mp4" if is_video else "image/png"
+        result_key = f"tool-results/{user_id}/{tool_name}/{uuid.uuid4()}.{ext}"
+        await storage.upload(result_key, result_bytes, content_type=content_type)
 
         # Build result URL
         from app.adapters.storage import S3StorageAdapter
