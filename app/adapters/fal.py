@@ -95,16 +95,19 @@ class FalVideoAdapter:
     """
     Generates short videos via fal.ai.
 
-    Default model : fal-ai/cogvideox-5b
-    Standard cost : configured via gen_video_cost_paise (default 800 paise = ₹8)
+    Default model : fal-ai/kling-video/v2.1/standard/image-to-video
+    Standard cost : configured via gen_video_cost_paise (default 2500 paise = ₹25)
+
+    Supports both text-to-video (generate) and image-to-video (generate_from_image).
+    Kling and most modern fal.ai video models return {"video": {"url": "..."}}.
     """
 
     def __init__(
         self,
         api_key: str,
         *,
-        model_id: str = "fal-ai/cogvideox-5b",
-        cost_paise: int = 800,
+        model_id: str = "fal-ai/kling-video/v2.1/standard/image-to-video",
+        cost_paise: int = 2500,
         max_retries: int = 3,
         timeout_seconds: float = 600.0,
     ) -> None:
@@ -113,17 +116,12 @@ class FalVideoAdapter:
         self._cost_paise = cost_paise
         self._timeout_seconds = timeout_seconds
 
-    async def generate(self, prompt: str) -> GenerationOutput:
+    async def _submit_and_download(self, arguments: dict) -> GenerationOutput:
         import httpx
 
         async def _run() -> GenerationOutput:
             logger.info("fal.ai submitting video: model=%s", self._model_id)
-
-            handler = await fal_client.submit_async(
-                self._model_id,
-                arguments={"prompt": prompt},
-            )
-
+            handler = await fal_client.submit_async(self._model_id, arguments=arguments)
             result = await handler.get()
             logger.info("fal.ai video done: model=%s request_id=%s", self._model_id, handler.request_id)
 
@@ -146,6 +144,25 @@ class FalVideoAdapter:
             )
 
         return await with_timeout(_run(), seconds=self._timeout_seconds, label="FalVideoAdapter")
+
+    async def generate(self, prompt: str) -> GenerationOutput:
+        return await self._submit_and_download({"prompt": prompt})
+
+    async def generate_from_image(
+        self,
+        prompt: str,
+        image_url: str,
+        *,
+        duration: str = "5",
+        aspect_ratio: str = "9:16",
+    ) -> GenerationOutput:
+        """Image-to-video: animate a still image with optional motion prompt."""
+        return await self._submit_and_download({
+            "prompt": prompt,
+            "image_url": image_url,
+            "duration": duration,
+            "aspect_ratio": aspect_ratio,
+        })
 
     async def aclose(self) -> None:
         pass

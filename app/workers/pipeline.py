@@ -162,6 +162,9 @@ async def run_generate(
     # Use richer context when the provider supports it
     from app.adapters.openai_image import OpenAIGenerationAdapter
     from app.adapters.instantid import InstantIDAdapter
+    from app.adapters.fal import FalVideoAdapter
+
+    source_image_url = face_image_url or template_image_url
 
     if isinstance(generation_provider, OpenAIGenerationAdapter):
         # Pass template + face images so gpt-image-2 composites them directly
@@ -169,6 +172,13 @@ async def run_generate(
             prompt_result.generation_prompt,
             template_image_url=template_image_url,
             face_image_url=face_image_url,
+        )
+    elif isinstance(generation_provider, FalVideoAdapter) and source_image_url:
+        # Kling image-to-video: animate from user photo or template cover
+        output = await generation_provider.generate_from_image(
+            prompt_result.generation_prompt,
+            image_url=source_image_url,
+            aspect_ratio=aspect_ratio,
         )
     elif face_image_url and isinstance(generation_provider, InstantIDAdapter):
         output = await generation_provider.generate_with_face(

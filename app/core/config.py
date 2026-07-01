@@ -90,7 +90,7 @@ class Settings(BaseSettings):
         description="fal.ai model ID for image generation",
     )
     gen_video_model: str = Field(
-        default="fal-ai/cogvideox-5b",
+        default="fal-ai/kling-video/v2.1/standard/image-to-video",
         description="fal.ai model ID for video generation",
     )
 
@@ -100,8 +100,8 @@ class Settings(BaseSettings):
         description="Standard cost per image in paise (₹2.50 default)",
     )
     gen_video_cost_paise: int = Field(
-        default=800,
-        description="Standard cost per video in paise (₹8.00 default)",
+        default=2500,
+        description="Standard cost per video in paise (₹25.00 default — Kling v2.1 standard)",
     )
 
     # Hard wall-clock budgets for the entire generate() call (submit + poll)
