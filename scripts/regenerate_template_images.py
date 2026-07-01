@@ -1,5 +1,5 @@
 """
-Regenerate all template cover images using OpenAI gpt-image-1.
+Regenerate all template cover images using OpenAI gpt-image-2.
 
 For each template:
   1. Generate a high-quality image from scene_description via OpenAI
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-2")
 DATABASE_URL = (
     os.environ.get("DATABASE_URL", "")
     .replace("postgresql://", "postgresql+asyncpg://", 1)

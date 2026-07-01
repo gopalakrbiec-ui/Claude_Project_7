@@ -73,8 +73,8 @@ class Settings(BaseSettings):
     # OpenAI — image generation for tools and templates
     openai_api_key: str = Field(default="")
     openai_image_model: str = Field(
-        default="gpt-image-1",
-        description="OpenAI image model ID, e.g. gpt-image-1 or gpt-image-1.5",
+        default="gpt-image-2",
+        description="OpenAI image model ID, e.g. gpt-image-2",
     )
 
 

@@ -164,7 +164,7 @@ async def run_generate(
     from app.adapters.instantid import InstantIDAdapter
 
     if isinstance(generation_provider, OpenAIGenerationAdapter):
-        # Pass template + face images so gpt-image-1 composites them directly
+        # Pass template + face images so gpt-image-2 composites them directly
         output = await generation_provider.generate_with_context(
             prompt_result.generation_prompt,
             template_image_url=template_image_url,

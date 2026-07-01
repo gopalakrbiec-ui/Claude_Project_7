@@ -53,7 +53,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     openai_model = settings.openai_image_model
     cost = params["cost_paise"]
 
-    # ── OpenAI gpt-image-1 tools (fal.ai fallback when key not set) ─────────
+    # ── OpenAI gpt-image-2 tools (fal.ai fallback when key not set) ─────────
 
     if tool_name == "ai-filter":
         style = params.get("style", "anime")

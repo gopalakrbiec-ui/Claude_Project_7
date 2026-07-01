@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-OpenAI gpt-image-1 adapter.
+OpenAI gpt-image-2 adapter.
 
 Handles: text-to-image, image editing (inpainting), style transfer.
 Used for AI filter, background replace, and text-to-image tools.
@@ -58,7 +58,7 @@ def _ensure_png(data: bytes) -> bytes:
 
 class OpenAIImageAdapter:
     """
-    Text-to-image and image editing via OpenAI gpt-image-1.
+    Text-to-image and image editing via OpenAI gpt-image-2.
 
     generate()     — text prompt → image (1024×1024 or 1024×1536)
     edit()         — image + prompt → edited image (inpainting)
@@ -72,7 +72,7 @@ class OpenAIImageAdapter:
         cost_paise: int = 200,
         timeout_seconds: float = 120.0,
         quality: Literal["low", "medium", "high", "auto"] = "medium",
-        model: str = "gpt-image-1",
+        model: str = "gpt-image-2",
     ) -> None:
         self._api_key = api_key
         self._cost_paise = cost_paise
@@ -219,7 +219,7 @@ class OpenAIImageAdapter:
 
 class OpenAIGenerationAdapter:
     """
-    Implements GenerationProvider using OpenAI gpt-image-1 (text-to-image + edit).
+    Implements GenerationProvider using OpenAI gpt-image-2 (text-to-image + edit).
     Drop-in replacement for fal.ai in the order/template pipeline.
     Set GEN_PROVIDER=openai in Railway env to activate.
 
@@ -235,7 +235,7 @@ class OpenAIGenerationAdapter:
         cost_paise: int = 250,
         timeout_seconds: float = 120.0,
         quality: Literal["low", "medium", "high", "auto"] = "medium",
-        model: str = "gpt-image-1",
+        model: str = "gpt-image-2",
         aspect_ratio: str = "9:16",
     ) -> None:
         self._adapter = OpenAIImageAdapter(
