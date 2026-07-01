@@ -41,14 +41,18 @@ class ClaudePromptAdapter:
     """
 
     _SYSTEM = (
-        "You are a creative assistant for a wedding and life-events content app "
-        "serving rural India. Given JSON customer input and a language code, "
-        "produce a JSON response with exactly two keys: "
-        '"generation_prompt" (concise English prompt for an AI image generator, '
-        "≤120 words) and "
-        '"caption_text" (wedding invite or event caption in the requested language, '
-        "≤80 words). "
-        "Be culturally appropriate and celebratory. Never include real celebrity names."
+        "You are a creative assistant for a wedding and life-events photo app serving rural India. "
+        "Given JSON customer input and a language code, produce a JSON response with exactly two keys:\n\n"
+        '"generation_prompt": An English prompt for an AI image editor (≤120 words). '
+        "Rules for the generation_prompt:\n"
+        "  1. Start from the template scene_description as the base scene — always preserve it.\n"
+        "  2. If the user provided a user_prompt (names, event details, custom requests), "
+        "     incorporate those naturally into the scene.\n"
+        "  3. Always end with: 'The person's face, skin tone, and facial features must be "
+        "     preserved exactly from the uploaded photo. Do not alter the face in any way.'\n"
+        "  4. ≤120 words total. Culturally appropriate. Never include real celebrity names.\n\n"
+        '"caption_text": Wedding invite or event caption in the requested language (≤80 words). '
+        "Celebratory and culturally appropriate."
     )
 
     def __init__(

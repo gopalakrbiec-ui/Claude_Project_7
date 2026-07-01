@@ -288,17 +288,21 @@ class OpenAIGenerationAdapter:
         if not images:
             return await self.generate(prompt)
 
-        # Build an explicit compositing prompt so the model understands the intent
+        # Build compositing prompt: template is fixed background, user face is preserved exactly
+        face_instruction = (
+            "The second image is the user's photo — transplant their face and person into "
+            "the portrait area of the template. "
+            "CRITICAL: preserve the user's face, skin tone, and facial features 100% exactly "
+            "as they appear in their photo. Do not beautify, alter, or replace the face. "
+            "Match the lighting and shadows of the template scene around the face. "
+        ) if face_image_url else ""
+
         composite_prompt = (
             f"{prompt}\n\n"
-            "Use the first image as the fixed template/background — preserve its layout, "
-            "text, decorative elements, and colour scheme exactly. "
-            + (
-                "Place the person from the second image into the portrait frame in the template. "
-                "Match lighting, shadows, and perspective to the template. "
-                if face_image_url else ""
-            )
-            + "Return only the final composited image."
+            "The first image is the template — keep its layout, decorative elements, "
+            "text overlays, borders, and colour scheme exactly unchanged. "
+            f"{face_instruction}"
+            "Return only the final composited image, nothing else."
         )
 
         image_bytes, cost = await self._adapter.edit_multi(images, composite_prompt)

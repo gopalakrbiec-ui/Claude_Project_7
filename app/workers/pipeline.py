@@ -117,15 +117,19 @@ async def run_build_prompt(
     Pure network call — no DB writes.
     """
     payload = dict(order.input_payload)
+    language = payload.get("language", "hi")
 
-    # Merge new-style fields into payload for Claude
+    # template scene_description is always the base — Claude must start from this
+    if template_scene:
+        payload["template_scene"] = template_scene
+
+    # user_prompt is optional — mixed into template scene when provided
     user_prompt = payload.pop("user_prompt", None)
     if user_prompt:
         payload["user_prompt"] = user_prompt
-    if template_scene:
-        payload["scene_description"] = template_scene
+    else:
+        payload.pop("user_prompt", None)
 
-    language = payload.get("language", "hi")
     return await claude_adapter.build_prompt(payload, language)
 
 
