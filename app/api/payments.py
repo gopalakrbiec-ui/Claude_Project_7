@@ -16,6 +16,20 @@ from app.services.payment import PaymentService, WebhookSignatureError
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/payments", tags=["payments"])
 
+# Credit top-up packs — amount user pays vs credits they receive (both in paise).
+# Bonus credits act as a discount incentive for larger packs.
+_CREDIT_PACKS = [
+    {"id": "pack_49",  "label": "Starter",  "price_paise": 4900,  "credits_paise": 4900,  "bonus_paise": 0,    "popular": False},
+    {"id": "pack_99",  "label": "Standard", "price_paise": 9900,  "credits_paise": 11000, "bonus_paise": 1100, "popular": True},
+    {"id": "pack_199", "label": "Pro",       "price_paise": 19900, "credits_paise": 23000, "bonus_paise": 3100, "popular": False},
+]
+
+
+@router.get("/packs", summary="List available credit top-up packs")
+async def list_packs() -> dict:
+    """Returns the available credit packs for the wallet top-up screen."""
+    return {"packs": _CREDIT_PACKS}
+
 
 def _get_payment_service(db: Annotated[AsyncSession, Depends(get_db)]) -> PaymentService:
     return PaymentService(session=db, gateway=RazorpayAdapter())
