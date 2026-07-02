@@ -129,12 +129,17 @@ async def verify_payment(
 
     settings = get_settings()
 
-    # Verify HMAC: sign(order_id + "|" + payment_id) with webhook secret
+    # Verify HMAC: HMAC-SHA256(razorpay_order_id + "|" + razorpay_payment_id, key_secret)
+    # Uses razorpay_key_secret (API key secret), NOT the webhook secret — they are different.
+    if not settings.razorpay_key_secret:
+        logger.error("RAZORPAY_KEY_SECRET is not configured — cannot verify payment signature")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Payment verification not configured")
     message = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
     expected = hmac_lib.new(
         settings.razorpay_key_secret.encode(), message, hashlib.sha256
     ).hexdigest()
     if not hmac_lib.compare_digest(expected, body.razorpay_signature):
+        logger.warning("Payment signature mismatch for order=%s payment=%s", body.razorpay_order_id, body.razorpay_payment_id)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment signature")
 
     payment_repo = PaymentRepository(db)
