@@ -1,0 +1,44 @@
+name: Add Credits to User
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'User email'
+        required: false
+        default: ''
+      phone:
+        description: 'User phone (if no email)'
+        required: false
+        default: ''
+      amount_paise:
+        description: 'Amount in paise (100000 = ₹1000)'
+        required: false
+        default: '100000'
+
+jobs:
+  add-credits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install sqlalchemy asyncpg
+
+      - name: Add credits
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.email }}" ]; then
+            ARGS="$ARGS --email ${{ inputs.email }}"
+          fi
+          if [ -n "${{ inputs.phone }}" ]; then
+            ARGS="$ARGS --phone ${{ inputs.phone }}"
+          fi
+          python scripts/add_credits.py $ARGS --amount ${{ inputs.amount_paise }}
