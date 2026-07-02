@@ -34,7 +34,7 @@ async def get_balance(
 
 
 class DevAddCreditsIn(BaseModel):
-    amount_paise: int = 1000  # default ₹10 for testing
+    amount_paise: int = 100000  # default ₹1000 for testing
 
 
 @router.post("/dev/add", response_model=BalanceOut, summary="Dev-only: seed test credits")
