@@ -41,6 +41,8 @@ _TOOL_CATALOG = [
     {"id": "hair-salon",      "name": "Hair Salon",       "icon": "content_cut",   "cost_paise": 200,  "category": "fashion"},
     {"id": "remix",           "name": "Remix",            "icon": "shuffle",       "cost_paise": 500,  "category": "creative"},
     {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 200,  "category": "creative"},
+    {"id": "photo-merge",     "name": "Photo Merge",     "icon": "group",         "cost_paise": 500,  "category": "creative",
+     "keywords": ["together", "hugging", "kissing", "collage", "side by side", "wedding", "romantic", "friends"]},
     {"id": "kling-video",     "name": "Kling-video",     "icon": "play_circle",   "cost_paise": 2500, "category": "video"},
     {"id": "wan-video",       "name": "Wan-video",       "icon": "play_circle",   "cost_paise": 2000, "category": "video"},
     {"id": "seedance-video",  "name": "Seedance-video",  "icon": "play_circle",   "cost_paise": 1500, "category": "video"},
@@ -61,6 +63,18 @@ _COST_HAIR = 200
 _COST_BG_REPLACE = 200
 _COST_REMIX = 500
 _COST_TEXT2IMG = 200
+_COST_PHOTO_MERGE = 500
+
+_PHOTO_MERGE_KEYWORDS: dict[str, str] = {
+    "together":    "Place all the people together in one natural photo, standing or sitting close together, smiling.",
+    "hugging":     "Show all the people hugging each other warmly in one natural photo.",
+    "kissing":     "Show the two people sharing a romantic kiss in one natural photo.",
+    "collage":     "Create a beautiful photo collage arranging all the photos in an artistic layout.",
+    "side by side": "Place the people side by side in one natural photo.",
+    "wedding":     "Show all the people together in a beautiful wedding setting, elegantly dressed.",
+    "romantic":    "Create a romantic scene with the people together, soft lighting and warm atmosphere.",
+    "friends":     "Show all the people together as friends, laughing and having fun.",
+}
 
 # Video tool costs (paise)
 _VIDEO_COSTS: dict[str, int] = {
@@ -196,6 +210,12 @@ class RemixIn(BaseModel):
 class TextToImageIn(BaseModel):
     prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
     aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
+
+
+class PhotoMergeIn(BaseModel):
+    photo_keys: list[str] = Field(..., min_length=2, max_length=4, description="2–4 R2 keys of photos to merge")
+    keywords: list[str] = Field(default=[], description="Preset keywords: together | hugging | kissing | collage | side by side | wedding | romantic | friends")
+    prompt: str = Field(default="", max_length=400, description="Optional free-text to add to the scene description")
 
 
 class AnimatePhotoIn(BaseModel):
@@ -510,6 +530,46 @@ async def text_to_image(
         "prompt": body.prompt, "aspect_ratio": body.aspect_ratio, "cost_paise": _COST_TEXT2IMG,
     })
     return JobOut(job_id=job_id, cost_paise=_COST_TEXT2IMG)
+
+
+# ---------------------------------------------------------------------------
+# Photo Merge
+# ---------------------------------------------------------------------------
+
+
+@router.post("/photo-merge", response_model=JobOut)
+async def photo_merge(
+    body: PhotoMergeIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JobOut:
+    """
+    Merge 2–4 photos into one AI-generated composite scene.
+
+    Keywords auto-build a scene prompt; free-text `prompt` is appended.
+    Keyword options: together | hugging | kissing | collage | side by side | wedding | romantic | friends
+    """
+    idem_key = f"tool:photo-merge:{current_user.id}:{':'.join(sorted(body.photo_keys))}:{','.join(sorted(body.keywords))}"
+    await _charge(db, current_user, _COST_PHOTO_MERGE, "photo-merge", idem_key)
+
+    # Build scene description from keywords + free text
+    keyword_descs = [
+        _PHOTO_MERGE_KEYWORDS[kw.lower().strip()]
+        for kw in body.keywords
+        if kw.lower().strip() in _PHOTO_MERGE_KEYWORDS
+    ]
+    scene = " ".join(keyword_descs)
+    if body.prompt.strip():
+        scene = f"{scene} {body.prompt.strip()}".strip()
+    if not scene:
+        scene = "Place all the people together in one natural, beautiful photo."
+
+    job_id = await _enqueue("photo-merge", current_user.id, _COST_PHOTO_MERGE, {
+        "photo_keys": body.photo_keys,
+        "scene": scene,
+        "cost_paise": _COST_PHOTO_MERGE,
+    })
+    return JobOut(job_id=job_id, cost_paise=_COST_PHOTO_MERGE)
 
 
 # ---------------------------------------------------------------------------

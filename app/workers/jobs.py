@@ -147,6 +147,26 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         )
         return data
 
+    if tool_name == "photo-merge":
+        photo_keys: list[str] = params["photo_keys"]
+        scene: str = params.get("scene", "Place all the people together in one natural photo.")
+        if not openai_key:
+            raise ValueError("photo-merge requires OPENAI_API_KEY")
+        from app.adapters.openai_image import OpenAIImageAdapter
+        images: list[bytes] = []
+        for pk in photo_keys:
+            images.append(await _fetch_bytes(presign(pk)))
+        full_prompt = (
+            f"{scene} "
+            "Keep the faces and identities of every person clearly recognisable. "
+            "Preserve their skin tones, clothing colours, and distinctive features. "
+            "Make the result look like a natural, high-quality photograph."
+        )
+        data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(
+            images, full_prompt
+        )
+        return data
+
     if tool_name == "text-to-image":
         prompt = params.get("prompt", "")
         aspect_ratio = params.get("aspect_ratio", "9:16")
