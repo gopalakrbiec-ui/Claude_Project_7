@@ -143,6 +143,11 @@ async def verify_otp(
 @router.get("/me", response_model=MeOut, status_code=status.HTTP_200_OK)
 async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MeOut:
-    """Return the authenticated user's profile."""
-    return MeOut.model_validate(current_user)
+    """Return the authenticated user's profile including current wallet balance."""
+    from app.services.credits import CreditsService
+    credits_paise = await CreditsService(db).get_balance(current_user.id)
+    out = MeOut.model_validate(current_user)
+    out.credits_paise = credits_paise
+    return out

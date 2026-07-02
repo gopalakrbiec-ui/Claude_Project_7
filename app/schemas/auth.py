@@ -31,6 +31,7 @@ class MeOut(BaseModel):
     city: str | None = None
     preferred_language: str
     role: str
+    credits_paise: int = 0
 
     model_config = {"from_attributes": True}
 
