@@ -132,6 +132,13 @@ class Settings(BaseSettings):
     # NEVER enable in production.
     bypass_otp: bool = Field(default=False)
 
+    # ------------------------------------------------------------------
+    # Inspire feature — stock photo/video search
+    # ------------------------------------------------------------------
+    pexels_api_key: str = Field(default="", description="Pexels API key for stock photo search")
+    pixabay_api_key: str = Field(default="", description="Pixabay API key for stock video search")
+    inspire_cache_ttl_seconds: int = Field(default=3600, description="Redis TTL for inspire search results")
+
     # Comma-separated list of allowed CORS origins in production.
     # e.g. "https://myapp.com,https://app.myapp.com"
     allowed_origins: str = Field(default="")
