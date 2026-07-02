@@ -41,7 +41,10 @@ _TOOL_CATALOG = [
     {"id": "hair-salon",      "name": "Hair Salon",       "icon": "content_cut",   "cost_paise": 200,  "category": "fashion"},
     {"id": "remix",           "name": "Remix",            "icon": "shuffle",       "cost_paise": 500,  "category": "creative"},
     {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 200,  "category": "creative"},
-    {"id": "animate-photo",   "name": "Animate Photo",   "icon": "play_circle",   "cost_paise": 2500, "category": "video"},
+    {"id": "kling-video",     "name": "Kling-video",     "icon": "play_circle",   "cost_paise": 2500, "category": "video"},
+    {"id": "wan-video",       "name": "Wan-video",       "icon": "play_circle",   "cost_paise": 2000, "category": "video"},
+    {"id": "seedance-video",  "name": "Seedance-video",  "icon": "play_circle",   "cost_paise": 1500, "category": "video"},
+    {"id": "veo-video",       "name": "Veo-video",       "icon": "play_circle",   "cost_paise": 3000, "category": "video"},
 ]
 
 
@@ -58,7 +61,14 @@ _COST_HAIR = 200
 _COST_BG_REPLACE = 200
 _COST_REMIX = 500
 _COST_TEXT2IMG = 200
-_COST_ANIMATE = 2500
+
+# Video tool costs (paise)
+_VIDEO_COSTS: dict[str, int] = {
+    "kling-video":    2500,
+    "wan-video":      2000,
+    "seedance-video": 1500,
+    "veo-video":      3000,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +205,9 @@ class AnimatePhotoIn(BaseModel):
     aspect_ratio: str = Field(default="9:16", description="9:16 | 16:9 | 1:1")
 
 
+_VIDEO_TOOL_IDS = set(_VIDEO_COSTS.keys())
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -235,9 +248,11 @@ async def _charge(
 
 
 async def _enqueue(tool_name: str, user_id: int, cost_paise: int, params: dict) -> str:
-    """Enqueue an arq run_tool job and return the job_id."""
+    """Enqueue an arq run_tool job, record it in per-user history, and return the job_id."""
     import arq
+    import time
     from app.core.config import get_settings
+    from app.core.redis import get_redis
     from urllib.parse import urlparse
     from arq.connections import RedisSettings
 
@@ -263,6 +278,15 @@ async def _enqueue(tool_name: str, user_id: int, cost_paise: int, params: dict) 
         )
     finally:
         await pool.aclose()
+
+    # Record in per-user sorted set (score = unix timestamp) for history endpoint.
+    # Keeps last 90 days; capped at 200 entries per user.
+    redis = get_redis()
+    user_key = f"tool:user:{user_id}:jobs"
+    meta = json.dumps({"job_id": job_id, "tool_name": tool_name, "cost_paise": cost_paise})
+    await redis.zadd(user_key, {meta: time.time()})
+    await redis.zremrangebyrank(user_key, 0, -201)   # keep newest 200
+    await redis.expire(user_key, 90 * 86400)
 
     return job_id
 
@@ -292,6 +316,44 @@ async def tool_status(
         result_url=data.get("result_url"),
         error=data.get("error"),
     )
+
+
+@router.get("/jobs", summary="List current user's tool job history")
+async def list_tool_jobs(
+    current_user: Annotated[User, Depends(get_current_user)],
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    """
+    Returns the authenticated user's tool job history, newest first.
+    Merges per-job status from Redis so result_url is included when available.
+    """
+    from app.core.redis import get_redis
+
+    redis = get_redis()
+    user_key = f"tool:user:{current_user.id}:jobs"
+
+    # Sorted set is scored by timestamp ascending; fetch newest first
+    offset = (page - 1) * page_size
+    raw_entries = await redis.zrevrange(user_key, offset, offset + page_size - 1)
+
+    jobs = []
+    for raw in raw_entries:
+        meta = json.loads(raw)
+        job_id = meta["job_id"]
+        job_raw = await redis.get(f"tool:job:{job_id}")
+        job_data: dict = json.loads(job_raw) if job_raw else {}
+        jobs.append({
+            "job_id": job_id,
+            "type": "tool_job",
+            "tool_name": meta["tool_name"],
+            "status": job_data.get("status", "expired"),
+            "result_url": job_data.get("result_url"),
+            "error": job_data.get("error"),
+            "cost_paise": meta["cost_paise"],
+        })
+
+    return {"jobs": jobs, "page": page, "page_size": page_size}
 
 
 # ---------------------------------------------------------------------------
@@ -461,14 +523,37 @@ async def animate_photo(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobOut:
-    """Animate a still photo into a short video clip using Kling via fal.ai."""
-    idem_key = f"tool:animate:{current_user.id}:{body.photo_key}:{body.duration}"
-    await _charge(db, current_user, _COST_ANIMATE, "animate-photo", idem_key)
-    job_id = await _enqueue("animate-photo", current_user.id, _COST_ANIMATE, {
+    """Animate a still photo — defaults to Kling v2.1. Kept for backwards compatibility."""
+    return await _run_video_tool("kling-video", body, current_user, db)
+
+
+@router.post("/{video_tool_id}", response_model=JobOut)
+async def run_video_tool(
+    video_tool_id: str,
+    body: AnimatePhotoIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JobOut:
+    """Unified video tool endpoint — accepts kling-video, wan-video, seedance-video, veo-video."""
+    if video_tool_id not in _VIDEO_TOOL_IDS:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {video_tool_id}")
+    return await _run_video_tool(video_tool_id, body, current_user, db)
+
+
+async def _run_video_tool(
+    tool_id: str,
+    body: AnimatePhotoIn,
+    current_user: User,
+    db: AsyncSession,
+) -> JobOut:
+    cost = _VIDEO_COSTS[tool_id]
+    idem_key = f"tool:{tool_id}:{current_user.id}:{body.photo_key}:{body.duration}"
+    await _charge(db, current_user, cost, tool_id, idem_key)
+    job_id = await _enqueue(tool_id, current_user.id, cost, {
         "photo_key": body.photo_key,
         "prompt": body.prompt,
         "duration": body.duration,
         "aspect_ratio": body.aspect_ratio,
-        "cost_paise": _COST_ANIMATE,
+        "cost_paise": cost,
     })
-    return JobOut(job_id=job_id, cost_paise=_COST_ANIMATE)
+    return JobOut(job_id=job_id, cost_paise=cost)
