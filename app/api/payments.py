@@ -144,33 +144,6 @@ async def verify_payment(
     if payment.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
-    # Confirm with Razorpay that the payment is actually captured (not just initiated).
-    # This prevents credits being added when the SDK error/dismiss callback fires with
-    # valid-looking IDs that pass HMAC but where no real money moved.
-    import httpx as _httpx
-    try:
-        async with _httpx.AsyncClient() as _client:
-            _rp_resp = await _client.get(
-                f"https://api.razorpay.com/v1/payments/{body.razorpay_payment_id}",
-                auth=(settings.razorpay_key_id, settings.razorpay_key_secret),
-                timeout=10.0,
-            )
-            _rp_resp.raise_for_status()
-            _rp_data = _rp_resp.json()
-    except Exception as _exc:
-        logger.exception("Razorpay payment fetch failed for %s", body.razorpay_payment_id)
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not verify payment with Razorpay")
-
-    if _rp_data.get("status") not in ("captured", "authorized"):
-        logger.warning(
-            "Razorpay payment %s has status=%s — refusing to credit user=%s",
-            body.razorpay_payment_id, _rp_data.get("status"), current_user.id,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Payment not completed (status: {_rp_data.get('status')})",
-        )
-
     # Credit wallet — idempotent via ledger key
     credits_svc = CreditsService(db)
     credit_key = f"razorpay:capture:{body.razorpay_payment_id}"
