@@ -35,7 +35,8 @@ def _cache_key(source: str, query: str, page: int) -> str:
 
 
 async def _cached_search(cache_key: str, ttl: int, fetch_fn) -> list[dict]:
-    redis = await _get_redis()
+    from app.core.redis import get_redis
+    redis = get_redis()
     raw = await redis.get(cache_key)
     if raw:
         return json.loads(raw)
