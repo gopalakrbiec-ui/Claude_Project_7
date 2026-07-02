@@ -1,25 +1,20 @@
 from __future__ import annotations
 
 """
-Inspire endpoints — stock photo and video search for the Inspire bottom sheet.
+Inspire endpoints — Pexels stock photo search for the Inspire bottom sheet.
 
-GET /inspire              → search photos (Pexels) + videos (Pixabay), merged results
-GET /inspire/photos       → photos only (Pexels)
-GET /inspire/videos       → videos only (Pixabay)
-GET /inspire/keywords     → preset keyword chips for the UI
-POST /inspire/notify      → capture "notify me when ready" signups (stored in Redis)
+GET /inspire         → search photos; curated feed when query is empty
+GET /inspire/photos  → explicit alias for the same
+GET /inspire/keywords → preset keyword chips for the UI
 
-All search results are cached in Redis keyed by (source, query, page) for
-inspire_cache_ttl_seconds (default 1 hour) to respect API rate limits.
-
-No authentication required — users should be able to browse before logging in.
+Results cached in Redis for inspire_cache_ttl_seconds (default 1 hour).
+No authentication required.
 """
 
 import json
 import logging
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inspire", tags=["inspire"])
@@ -32,11 +27,6 @@ _KEYWORDS = [
     "bollywood", "rajasthani", "traditional",
     "flowers", "nature", "golden hour",
 ]
-
-
-async def _get_redis():
-    from app.core.redis import get_redis
-    return get_redis()
 
 
 def _cache_key(source: str, query: str, page: int) -> str:
@@ -136,23 +126,3 @@ async def search_inspire(
     return {"results": items, "page": page, "per_page": per_page, "source": "pexels"}
 
 
-# ---------------------------------------------------------------------------
-# Notify Me When Ready (captures signups before Inspire goes live)
-# ---------------------------------------------------------------------------
-
-class NotifyIn(BaseModel):
-    user_id: int | None = None
-    phone: str | None = None
-
-
-@router.post("/notify")
-async def notify_when_ready(body: NotifyIn) -> dict:
-    """Record a 'notify me' signup in Redis. Deduplicated by user_id or phone."""
-    if not body.user_id and not body.phone:
-        return {"status": "ok"}
-
-    redis = await _get_redis()
-    identifier = str(body.user_id) if body.user_id else body.phone
-    await redis.sadd("inspire:notify:signups", identifier)
-    logger.info("Inspire notify signup: %s", identifier)
-    return {"status": "ok", "message": "You'll be notified when Inspire launches!"}
