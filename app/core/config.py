@@ -143,6 +143,21 @@ class Settings(BaseSettings):
     # e.g. "https://myapp.com,https://app.myapp.com"
     allowed_origins: str = Field(default="")
 
+    # ------------------------------------------------------------------
+    # Email (transactional — password reset, receipts)
+    # Resend takes priority over SMTP. If neither is set, emails are
+    # logged to console (dev only — never reaches the user).
+    # ------------------------------------------------------------------
+    resend_api_key: str = Field(default="", description="Resend.com API key for transactional email")
+    smtp_host: str = Field(default="", description="SMTP hostname, e.g. smtp.gmail.com")
+    smtp_port: int = Field(default=587)
+    smtp_user: str = Field(default="")
+    smtp_password: str = Field(default="")
+    email_from_address: str = Field(default="noreply@yaadein.app")
+
+    # Password reset token TTL
+    password_reset_ttl_seconds: int = Field(default=900, description="15 minutes")
+
     otp_provider: str = Field(default="console", description="console | msg91 | twilio")
     msg91_auth_key: str = Field(default="")
     msg91_template_id: str = Field(default="")

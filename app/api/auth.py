@@ -140,6 +140,127 @@ async def verify_otp(
     )
 
 
+# ---------------------------------------------------------------------------
+# POST /auth/forgot-password
+# ---------------------------------------------------------------------------
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/forgot-password", status_code=status.HTTP_200_OK, summary="Request a password reset link")
+async def forgot_password(
+    body: ForgotPasswordIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """
+    Always returns the same response regardless of whether the email exists —
+    prevents user enumeration. If the email is registered, sends a reset link.
+    """
+    from app.core.config import get_settings
+    from app.core.redis import get_redis
+    from app.adapters.email import EmailAdapter
+    from app.repositories.user import UserRepository
+    import secrets
+    import logging as _logging
+
+    settings = get_settings()
+    repo = UserRepository(db)
+    user = await repo.get_by_email(str(body.email))
+
+    if user is not None:
+        token = secrets.token_urlsafe(32)
+        redis = get_redis()
+        await redis.set(
+            f"pwd_reset:{token}",
+            str(user.id),
+            ex=settings.password_reset_ttl_seconds,
+        )
+
+        # Deep-link opens the app's reset screen; Flutter handles yaadein:// scheme
+        reset_link = f"yaadein://reset-password?token={token}"
+
+        html = f"""
+        <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
+          <h2 style="color:#1A1916;margin-bottom:8px;">Reset your password</h2>
+          <p style="color:#5C5A55;margin-bottom:24px;">Hi {user.name}, tap the button below to set a new password for your Yaadein account. This link expires in 15 minutes.</p>
+          <a href="{reset_link}" style="display:inline-block;background:#E87C1A;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">Reset Password</a>
+          <p style="color:#9B9890;font-size:13px;margin-top:24px;">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+        """
+        text = (
+            f"Hi {user.name},\n\n"
+            "Reset your Yaadein password using this link (expires in 15 minutes):\n"
+            f"{reset_link}\n\n"
+            "If you didn't request this, ignore this email.\n— Yaadein Team"
+        )
+
+        adapter = EmailAdapter(
+            resend_api_key=settings.resend_api_key,
+            smtp_host=settings.smtp_host,
+            smtp_port=settings.smtp_port,
+            smtp_user=settings.smtp_user,
+            smtp_password=settings.smtp_password,
+            from_address=settings.email_from_address,
+        )
+        try:
+            await adapter.send(
+                to=str(body.email),
+                subject="Reset your Yaadein password",
+                html=html,
+                text=text,
+            )
+        except Exception:
+            _logging.getLogger(__name__).exception("Failed to send password reset email to %s", body.email)
+
+    # Same response whether email exists or not — prevents user enumeration
+    return {"detail": "If that email is registered, a reset link has been sent."}
+
+
+# ---------------------------------------------------------------------------
+# POST /auth/reset-password
+# ---------------------------------------------------------------------------
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    new_password: str
+
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK, summary="Set new password using reset token")
+async def reset_password(
+    body: ResetPasswordIn,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Validates the one-time reset token and updates the user's password."""
+    from app.core.redis import get_redis
+    from app.repositories.user import UserRepository
+
+    redis = get_redis()
+    redis_key = f"pwd_reset:{body.token}"
+    user_id_raw = await redis.get(redis_key)
+
+    if user_id_raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset link is invalid or has expired. Please request a new one.",
+        )
+
+    user_id = int(user_id_raw)
+    repo = UserRepository(db)
+    user = await repo.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.hashed_password = _hash_password(body.new_password)
+    db.add(user)
+    await db.commit()
+
+    # Invalidate token so it can only be used once
+    await redis.delete(redis_key)
+
+    return {"detail": "Password updated successfully. You can now log in."}
+
+
 @router.get("/me", response_model=MeOut, status_code=status.HTTP_200_OK)
 async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
