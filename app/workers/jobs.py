@@ -182,6 +182,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         )
         return data
 
+    # Image-to-video models (used when a photo is attached)
     _VIDEO_TOOL_MODELS: dict[str, str] = {
         "animate-photo":  settings.gen_video_model,  # backwards compat alias → Kling
         "kling-video":    settings.gen_video_model,  # fal-ai/kling-video/v2.1/standard/image-to-video
@@ -189,23 +190,39 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         "seedance-video": "fal-ai/bytedance/seedance/v1/lite/image-to-video",
         "veo-video":      "fal-ai/veo3/fast/image-to-video",
     }
+    # Text-to-video models (used when only a prompt is given)
+    _VIDEO_TOOL_T2V_MODELS: dict[str, str] = {
+        "animate-photo":  "fal-ai/kling-video/v2.1/standard/text-to-video",
+        "kling-video":    "fal-ai/kling-video/v2.1/standard/text-to-video",
+        "wan-video":      "fal-ai/wan-t2v",
+        "seedance-video": "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+        "veo-video":      "fal-ai/veo3/fast",
+    }
 
     if tool_name in _VIDEO_TOOL_MODELS:
         from app.adapters.fal import FalVideoAdapter
-        model_id = _VIDEO_TOOL_MODELS[tool_name]
-        photo_url = presign(key_in)
         prompt = params.get("prompt", "gentle motion, cinematic")
         duration = params.get("duration", "5")
         aspect_ratio = params.get("aspect_ratio", "9:16")
-        adapter = FalVideoAdapter(
-            api_key=fal_key,
-            model_id=model_id,
-            cost_paise=cost,
-            timeout_seconds=settings.gen_video_timeout_seconds,
-        )
-        output = await adapter.generate_from_image(
-            prompt, image_url=photo_url, duration=duration, aspect_ratio=aspect_ratio
-        )
+
+        if key_in:
+            adapter = FalVideoAdapter(
+                api_key=fal_key,
+                model_id=_VIDEO_TOOL_MODELS[tool_name],
+                cost_paise=cost,
+                timeout_seconds=settings.gen_video_timeout_seconds,
+            )
+            output = await adapter.generate_from_image(
+                prompt, image_url=presign(key_in), duration=duration, aspect_ratio=aspect_ratio
+            )
+        else:
+            adapter = FalVideoAdapter(
+                api_key=fal_key,
+                model_id=_VIDEO_TOOL_T2V_MODELS[tool_name],
+                cost_paise=cost,
+                timeout_seconds=settings.gen_video_timeout_seconds,
+            )
+            output = await adapter.generate(prompt)
         return output.media_bytes
 
     raise ValueError(f"Unknown tool: {tool_name}")

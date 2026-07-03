@@ -219,8 +219,8 @@ class PhotoMergeIn(BaseModel):
 
 
 class AnimatePhotoIn(BaseModel):
-    photo_key: str = Field(..., description="R2 key of the user's photo to animate")
-    prompt: str = Field(default="gentle motion, cinematic", max_length=300, description="Optional motion description")
+    photo_key: str | None = Field(default=None, description="R2 key of the photo to animate; omit for text-to-video")
+    prompt: str = Field(default="gentle motion, cinematic", max_length=300, description="Motion/scene description")
     duration: str = Field(default="5", description="Clip length in seconds: 5 or 10")
     aspect_ratio: str = Field(default="9:16", description="9:16 | 16:9 | 1:1")
 
@@ -614,7 +614,9 @@ async def _run_video_tool(
     db: AsyncSession,
 ) -> JobOut:
     cost = _VIDEO_COSTS[tool_id]
-    idem_key = f"tool:{tool_id}:{current_user.id}:{body.photo_key}:{body.duration}"
+    if not body.photo_key and not body.prompt.strip():
+        raise HTTPException(status_code=422, detail="Provide a photo, a prompt, or both")
+    idem_key = f"tool:{tool_id}:{current_user.id}:{body.photo_key or body.prompt[:64]}:{body.duration}"
     await _charge(db, current_user, cost, tool_id, idem_key)
     job_id = await _enqueue(tool_id, current_user.id, cost, {
         "photo_key": body.photo_key,
