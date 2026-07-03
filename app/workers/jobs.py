@@ -185,9 +185,9 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     _VIDEO_TOOL_MODELS: dict[str, str] = {
         "animate-photo":  settings.gen_video_model,  # backwards compat alias → Kling
         "kling-video":    settings.gen_video_model,  # fal-ai/kling-video/v2.1/standard/image-to-video
-        "wan-video":      "fal-ai/wan-i2v-480p",
-        "seedance-video": "fal-ai/bytedance/seedance-1-lite",
-        "veo-video":      "fal-ai/veo3",
+        "wan-video":      "fal-ai/wan-i2v",
+        "seedance-video": "fal-ai/bytedance/seedance/v1/lite/image-to-video",
+        "veo-video":      "fal-ai/veo3/fast/image-to-video",
     }
 
     if tool_name in _VIDEO_TOOL_MODELS:
