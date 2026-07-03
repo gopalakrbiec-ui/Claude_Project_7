@@ -21,7 +21,7 @@ from app.workers.pipeline import (
 
 logger = logging.getLogger(__name__)
 
-_TOOL_JOB_TTL = 86400  # 24 hours
+_TOOL_JOB_TTL = 90 * 86400  # 90 days — matches per-user history sorted set TTL
 
 
 # ---------------------------------------------------------------------------
@@ -233,9 +233,10 @@ async def run_tool(
     redis = get_redis()
     redis_key = f"tool:job:{job_id}"
 
+    import time as _time
     await redis.set(
         redis_key,
-        json.dumps({"status": "processing", "cost_paise": cost_paise}),
+        json.dumps({"status": "processing", "cost_paise": cost_paise, "user_id": user_id, "tool_name": tool_name, "created_at": int(_time.time())}),
         ex=_TOOL_JOB_TTL,
     )
 
@@ -246,7 +247,8 @@ async def run_tool(
         result_bytes = await _dispatch_tool(ctx, settings, tool_name, params)
 
         # Video tools: skip watermark, use mp4 extension
-        is_video = tool_name in ("animate-photo",)
+        _VIDEO_TOOL_NAMES = {"animate-photo", "kling-video", "wan-video", "seedance-video", "veo-video"}
+        is_video = tool_name in _VIDEO_TOOL_NAMES
 
         if not is_video and tool_name != "bg-remove":
             import asyncio
@@ -268,7 +270,7 @@ async def run_tool(
 
         await redis.set(
             redis_key,
-            json.dumps({"status": "done", "result_url": result_url, "cost_paise": cost_paise}),
+            json.dumps({"status": "done", "result_url": result_url, "cost_paise": cost_paise, "user_id": user_id, "tool_name": tool_name}),
             ex=_TOOL_JOB_TTL,
         )
         logger.info("run_tool: done job_id=%s tool=%s user=%s", job_id, tool_name, user_id)
@@ -277,7 +279,7 @@ async def run_tool(
         logger.exception("run_tool: failed job_id=%s tool=%s", job_id, tool_name)
         await redis.set(
             redis_key,
-            json.dumps({"status": "failed", "error": str(exc)[:200], "cost_paise": cost_paise}),
+            json.dumps({"status": "failed", "error": str(exc)[:200], "cost_paise": cost_paise, "user_id": user_id, "tool_name": tool_name}),
             ex=_TOOL_JOB_TTL,
         )
         raise

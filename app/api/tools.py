@@ -321,7 +321,7 @@ async def tool_status(
     job_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> JobStatusOut:
-    """Poll the status of an async tool job."""
+    """Poll the status of an async tool job. Only the job owner can see it."""
     from app.core.redis import get_redis
 
     redis = get_redis()
@@ -329,6 +329,12 @@ async def tool_status(
     if raw is None:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     data = json.loads(raw)
+
+    # Ownership check — user_id is written into the record by the worker
+    job_user_id = data.get("user_id")
+    if job_user_id is not None and int(job_user_id) != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
     return JobStatusOut(
         job_id=job_id,
         status=data.get("status", "processing"),
@@ -366,11 +372,12 @@ async def list_tool_jobs(
         jobs.append({
             "job_id": job_id,
             "type": "tool_job",
-            "tool_name": meta["tool_name"],
+            "tool_name": job_data.get("tool_name") or meta["tool_name"],
             "status": job_data.get("status", "expired"),
             "result_url": job_data.get("result_url"),
             "error": job_data.get("error"),
             "cost_paise": meta["cost_paise"],
+            "created_at": job_data.get("created_at"),
         })
 
     return {"jobs": jobs, "page": page, "page_size": page_size}
