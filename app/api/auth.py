@@ -177,22 +177,22 @@ async def forgot_password(
             ex=settings.password_reset_ttl_seconds,
         )
 
-        # Deep-link opens the app's reset screen; Flutter handles yaadein:// scheme
-        reset_link = f"yaadein://reset-password?token={token}"
+        # Deep-link opens the app's reset screen; Flutter handles savinenapu:// scheme
+        reset_link = f"savinenapu://reset-password?token={token}"
 
         html = f"""
         <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;">
           <h2 style="color:#1A1916;margin-bottom:8px;">Reset your password</h2>
-          <p style="color:#5C5A55;margin-bottom:24px;">Hi {user.name}, tap the button below to set a new password for your Yaadein account. This link expires in 15 minutes.</p>
+          <p style="color:#5C5A55;margin-bottom:24px;">Hi {user.name}, tap the button below to set a new password for your Savi Nenapu account. This link expires in 15 minutes.</p>
           <a href="{reset_link}" style="display:inline-block;background:#E87C1A;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">Reset Password</a>
           <p style="color:#9B9890;font-size:13px;margin-top:24px;">If you didn't request this, you can safely ignore this email.</p>
         </div>
         """
         text = (
             f"Hi {user.name},\n\n"
-            "Reset your Yaadein password using this link (expires in 15 minutes):\n"
+            "Reset your Savi Nenapu password using this link (expires in 15 minutes):\n"
             f"{reset_link}\n\n"
-            "If you didn't request this, ignore this email.\n— Yaadein Team"
+            "If you didn't request this, ignore this email.\n— Savi Nenapu Team"
         )
 
         adapter = EmailAdapter(
@@ -206,7 +206,7 @@ async def forgot_password(
         try:
             await adapter.send(
                 to=str(body.email),
-                subject="Reset your Yaadein password",
+                subject="Reset your Savi Nenapu password",
                 html=html,
                 text=text,
             )

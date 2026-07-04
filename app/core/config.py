@@ -153,7 +153,7 @@ class Settings(BaseSettings):
     smtp_port: int = Field(default=587)
     smtp_user: str = Field(default="")
     smtp_password: str = Field(default="")
-    email_from_address: str = Field(default="noreply@yaadein.app")
+    email_from_address: str = Field(default="noreply@savinenapu.in")
 
     # Password reset token TTL
     password_reset_ttl_seconds: int = Field(default=900, description="15 minutes")

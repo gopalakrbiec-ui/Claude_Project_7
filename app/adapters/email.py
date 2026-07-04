@@ -29,7 +29,7 @@ class EmailAdapter:
         smtp_port: int = 587,
         smtp_user: str = "",
         smtp_password: str = "",
-        from_address: str = "noreply@yaadein.app",
+        from_address: str = "noreply@savinenapu.in",
     ) -> None:
         self._resend_key = resend_api_key
         self._smtp_host = smtp_host
