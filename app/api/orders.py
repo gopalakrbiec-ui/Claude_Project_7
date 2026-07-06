@@ -90,7 +90,9 @@ async def create_order(
     try:
         # Merge top-level new fields into input_payload so workers can read them
         payload = dict(body.input_payload)
-        if body.user_photo_key:
+        if body.user_photo_keys:
+            payload["user_photo_keys"] = body.user_photo_keys
+        elif body.user_photo_key:
             payload["user_photo_key"] = body.user_photo_key
         if body.user_prompt:
             payload["user_prompt"] = body.user_prompt

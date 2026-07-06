@@ -376,13 +376,20 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
         template_image_url: str | None = template.image_url if template else None
         template_scene: str | None = template.scene_description if template else None
 
-        # Resolve user photo to a presigned URL the model can fetch
+        # Resolve user photo(s) to presigned URL(s) the model can fetch.
+        # user_photo_keys (2-4 photos) takes priority over the single user_photo_key.
         face_image_url: str | None = None
-        user_photo_key = order.input_payload.get("user_photo_key")
-        if user_photo_key:
-            storage = ctx.get("storage_adapter")
-            from app.adapters.storage import S3StorageAdapter
-            if isinstance(storage, S3StorageAdapter):
+        face_image_urls: list[str] | None = None
+        storage = ctx.get("storage_adapter")
+        from app.adapters.storage import S3StorageAdapter
+
+        user_photo_keys = order.input_payload.get("user_photo_keys")
+        if user_photo_keys and isinstance(storage, S3StorageAdapter):
+            face_image_urls = [storage.presign(k, expires_in=900) for k in user_photo_keys]
+            face_image_url = face_image_urls[0]
+        else:
+            user_photo_key = order.input_payload.get("user_photo_key")
+            if user_photo_key and isinstance(storage, S3StorageAdapter):
                 face_image_url = storage.presign(user_photo_key, expires_in=900)
 
         aspect_ratio: str = order.input_payload.get("aspect_ratio", "9:16")
@@ -407,6 +414,7 @@ async def generate_content(ctx: dict, *, order_id: int) -> None:
             generation_provider=generation_provider,
             template_image_url=template_image_url,
             face_image_url=face_image_url,
+            face_image_urls=face_image_urls,
             aspect_ratio=aspect_ratio,
         )
 

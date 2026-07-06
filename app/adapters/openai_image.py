@@ -300,37 +300,53 @@ class OpenAIGenerationAdapter:
         *,
         template_image_url: str | None = None,
         face_image_url: str | None = None,
+        face_image_urls: list[str] | None = None,
     ) -> "GenerationOutput":
         """
-        Use the edit API with template + user photo when available.
+        Use the edit API with template + user photo(s) when available.
+        face_image_urls (2-4 photos) takes priority over the single face_image_url —
+        used for multi-photo orders where several people are composited into one scene.
         Falls back to text-only generate() if no images are provided.
         """
         from app.adapters.generation import GenerationOutput
 
-        images: list[bytes] = []
+        faces = face_image_urls if face_image_urls else ([face_image_url] if face_image_url else [])
 
-        if template_image_url or face_image_url:
+        images: list[bytes] = []
+        if template_image_url or faces:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 if template_image_url:
                     r = await client.get(template_image_url)
                     r.raise_for_status()
                     images.append(r.content)
-                if face_image_url:
-                    r = await client.get(face_image_url)
+                for url in faces:
+                    r = await client.get(url)
                     r.raise_for_status()
                     images.append(r.content)
 
         if not images:
             return await self.generate(prompt)
 
-        # Build compositing prompt: template is fixed background, user face is preserved exactly
-        face_instruction = (
-            "The second image is the user's photo — transplant their face and person into "
-            "the portrait area of the template. "
-            "CRITICAL: preserve the user's face, skin tone, and facial features 100% exactly "
-            "as they appear in their photo. Do not beautify, alter, or replace the face. "
-            "Match the lighting and shadows of the template scene around the face. "
-        ) if face_image_url else ""
+        # Build compositing prompt: template is fixed background, user face(s) preserved exactly
+        if len(faces) > 1:
+            face_instruction = (
+                f"The next {len(faces)} images are photos of different people — transplant each "
+                "person's face and likeness into the portrait area of the template, placing them "
+                "naturally together in the scene. "
+                "CRITICAL: preserve every person's face, skin tone, and facial features 100% exactly "
+                "as they appear in their own photo. Do not beautify, alter, merge, or swap faces "
+                "between people. Match the lighting and shadows of the template scene around each face. "
+            )
+        elif faces:
+            face_instruction = (
+                "The second image is the user's photo — transplant their face and person into "
+                "the portrait area of the template. "
+                "CRITICAL: preserve the user's face, skin tone, and facial features 100% exactly "
+                "as they appear in their photo. Do not beautify, alter, or replace the face. "
+                "Match the lighting and shadows of the template scene around the face. "
+            )
+        else:
+            face_instruction = ""
 
         composite_prompt = (
             f"{prompt}\n\n"

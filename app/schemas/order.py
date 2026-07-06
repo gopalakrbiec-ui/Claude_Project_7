@@ -8,8 +8,11 @@ from pydantic import BaseModel, Field
 
 class CreateOrderIn(BaseModel):
     template_id: int
-    # User's uploaded photo key (from POST /uploads/photo)
+    # User's uploaded photo key (from POST /uploads/photo) — single-photo orders
     user_photo_key: str | None = None
+    # Multi-photo orders (2-4 photos) — merged into one composited scene.
+    # Takes priority over user_photo_key when both are present.
+    user_photo_keys: list[str] | None = Field(default=None, max_length=4)
     # Optional free-text from user (names, event name, date, etc.)
     user_prompt: str | None = Field(default=None, max_length=500)
     # Desired output aspect ratio

@@ -142,6 +142,7 @@ async def run_generate(
     generation_provider: GenerationProvider,
     template_image_url: str | None = None,
     face_image_url: str | None = None,
+    face_image_urls: list[str] | None = None,
     aspect_ratio: str = "9:16",
 ) -> GenerationOutput:
     """
@@ -167,11 +168,13 @@ async def run_generate(
     source_image_url = face_image_url or template_image_url
 
     if isinstance(generation_provider, OpenAIGenerationAdapter):
-        # Pass template + face images so gpt-image-2 composites them directly
+        # Pass template + face image(s) so gpt-image-2 composites them directly.
+        # face_image_urls (2-4 photos) takes priority over the single face_image_url.
         output = await generation_provider.generate_with_context(
             prompt_result.generation_prompt,
             template_image_url=template_image_url,
             face_image_url=face_image_url,
+            face_image_urls=face_image_urls,
         )
     elif isinstance(generation_provider, FalVideoAdapter) and source_image_url:
         # Kling image-to-video: animate from user photo or template cover
