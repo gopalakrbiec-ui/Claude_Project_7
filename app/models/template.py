@@ -18,6 +18,14 @@ class Template(Base):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Scene description used to craft the generation prompt
     scene_description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Things the generation prompt should actively avoid (deformities, artifacts, etc.)
+    # Not currently sent to gpt-image-2 (no negative-prompt param) — captured for
+    # future SD-style providers and for prompt-authoring consistency.
+    negative_prompt: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Free-form search/filter tags, e.g. ["wedding", "outdoor", "sunset"]
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Preferred output aspect ratio for this template
+    aspect_ratio: Mapped[str] = mapped_column(String(10), nullable=False, default="9:16")
     # R2 object keys for source assets (background images, overlays, fonts, etc.)
     asset_keys: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     base_price_paise: Mapped[int] = mapped_column(Integer, nullable=False)

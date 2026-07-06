@@ -14,6 +14,19 @@ _CATEGORY_LABELS: dict[str, str] = {
     "festival": "Festival",
     "fashion": "Fashion",
     "family": "Family",
+    "childhood": "Childhood",
+    "school": "School",
+    "college": "College",
+    "love": "Love",
+    "engagement": "Engagement",
+    "pregnancy": "Pregnancy",
+    "baby": "Baby",
+    "travel": "Travel",
+    "career": "Career",
+    "traditional": "Traditional",
+    "spiritual": "Spiritual",
+    "tribute": "Tribute / Memory Restore",
+    "fantasy": "Fantasy",
 }
 
 
@@ -24,6 +37,9 @@ class TemplateOut(BaseModel):
     theme: str
     image_url: str | None = None
     scene_description: str | None = None
+    negative_prompt: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    aspect_ratio: str = "9:16"
     base_price_paise: int
     is_featured: bool = False
     # DB stores asset_keys as JSONB dict; normalised to list[str] by _normalise()

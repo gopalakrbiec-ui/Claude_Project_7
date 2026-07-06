@@ -139,6 +139,88 @@ async def _generate_missing_images(session_factory, public_base: str) -> None:
         # Family
         "Family Portrait": "warm family living room setting, comfortable sofa, family photo frames on wall, soft natural light, no people",
         "Grandparents Day": "cozy home setting, rocking chairs in garden, flowering plants, warm golden hour light, no people",
+
+        # Childhood
+        "Nostalgic School Days": "classroom backdrop, chalkboard, wooden desks, warm daylight through windows, no people",
+        "Village Childhood": "rural courtyard house, mud walls, clay pots, warm golden hour light, no people",
+        "Playground Joy": "colorful park playground, swings and slides, greenery, cheerful midday light, no people",
+        "Festive Childhood Memories": "decorated home courtyard, string lights, diyas glowing, warm festive atmosphere, no people",
+
+        # School
+        "Classroom Portrait": "school classroom backdrop, wooden desk, globe and notebooks, soft natural light, no people",
+        "School Annual Day": "decorated school stage, balloons and bunting, warm spotlight, no people",
+        "School Sports Day": "school running track, cheering stands blurred, bright outdoor daylight, no people",
+        "School Farewell": "school garden backdrop, soft evening light, bokeh foliage, no people",
+
+        # College
+        "Campus Friends": "college campus steps, greenery, natural daylight, candid backdrop, no people",
+        "College Fest": "vibrant college fest stage, colorful lights and decorations, cinematic evening lighting, no people",
+        "Graduation Day": "university building facade, soft golden hour light, ceremonial backdrop, no people",
+        "Library Study Moment": "library interior, wooden bookshelves, warm reading-lamp lighting, no people",
+
+        # Love
+        "Romantic Candlelight Dinner": "candlelit dinner table, soft bokeh string lights, warm romantic atmosphere, no people",
+        "Rain Romance": "wet city street reflections, gentle rain, moody cinematic lighting, no people",
+        "Sunset Beach Couple": "golden beach waves at sunset, warm horizon glow, no people",
+        "Coffee Date Couple": "cozy cafe interior, warm string lights, ambient decor, no people",
+
+        # Engagement
+        "Ring Ceremony": "floral mandap backdrop, fairy lights, warm celebratory glow, no people",
+        "Garden Engagement": "lush flower garden, blooming floral arch, soft natural daylight, no people",
+        "Traditional Engagement": "decorated ceremonial stage, marigold garlands, warm golden lighting, no people",
+        "Sunset Proposal": "silhouetted hills at sunset, dramatic warm sky, no people",
+
+        # Wedding top-up
+        "Cinematic Rain Wedding": "glistening rain-soaked garden path, moody cinematic lighting, no people",
+        "Sunset Beach Wedding": "beach shoreline at golden sunset, warm cinematic sky, no people",
+
+        # Pregnancy
+        "Maternity Garden Shoot": "blooming flower garden backdrop, soft natural daylight, no people",
+        "Traditional Godh Bharai": "decorated mandap with flowers, warm festive lighting, no people",
+        "Silhouette Maternity": "glowing sunset sky backdrop, warm backlit tones, no people",
+        "Beach Maternity": "golden hour beach shoreline, gentle waves, warm natural light, no people",
+
+        # Baby
+        "Newborn Sleeping Angel": "cozy neutral-tone nursery, soft warm studio lighting, no people",
+        "Baby First Birthday": "balloons and bunting party backdrop, bright cheerful lighting, no people",
+        "Baby with Parents": "softly lit home interior, neutral warm tones, no people",
+        "Cute Baby Portrait": "clean neutral studio backdrop, soft diffused lighting, no people",
+
+        # Travel
+        "Snow Mountains": "snow-capped mountain peaks, crisp clear sky, bright alpine daylight, no people",
+        "Beach Sunset": "tropical beach at sunset, palm trees, golden sky, no people",
+        "European Street": "cobblestone European street, historic buildings and cafes, soft overcast daylight, no people",
+        "Desert Safari": "golden sand dunes at sunset, vast desert horizon, warm dramatic lighting, no people",
+
+        # Career
+        "Corporate Boardroom": "modern glass boardroom, city skyline through windows, crisp corporate lighting, no people",
+        "Doctor at Work": "clean modern clinic interior, bright clinical lighting, no people",
+        "Entrepreneur Success": "bright modern office, laptop and charts, natural daylight, no people",
+        "Government Officer Portrait": "official office backdrop with flag, even formal studio lighting, no people",
+
+        # Traditional
+        "Traditional Saree Portrait": "ornate cultural backdrop, warm golden traditional lighting, no people",
+        "Dhoti Kurta Portrait": "heritage courtyard backdrop, warm natural daylight, no people",
+        "Regional Folk Attire": "rustic cultural backdrop, warm festive lighting, no people",
+        "Traditional Festival Attire": "decorated home backdrop with diyas, warm glowing lighting, no people",
+
+        # Spiritual
+        "Temple Devotion": "ornate temple backdrop, warm temple lamp lighting, no people",
+        "Meditation Sunrise": "misty hills and riverside at sunrise, soft warm lighting, no people",
+        "Pilgrimage Portrait": "sacred mountain or river backdrop, soft natural daylight, no people",
+        "Diya Prayer Moment": "softly lit home altar backdrop, warm intimate diya-glow lighting, no people",
+
+        # Tribute
+        "Memory Restore Portrait": "clean neutral studio backdrop, soft even lighting, no people",
+        "Tribute to Grandparents": "soft warm home backdrop, gentle nostalgic lighting, no people",
+        "In Loving Memory Frame": "muted neutral backdrop with soft floral frame border, solemn lighting, no people",
+        "Family Legacy Portrait": "heritage home backdrop, warm golden lighting, no people",
+
+        # Fantasy
+        "Royal Fantasy Portrait": "majestic palace throne room, dramatic golden royal lighting, no people",
+        "Superhero Transformation": "dramatic city skyline backdrop, bold cinematic lighting, no people",
+        "Mythical Warrior": "epic battlefield or mountain backdrop, dramatic stormy lighting, no people",
+        "Fairy Tale Dream": "magical glowing forest backdrop, soft ethereal lighting, no people",
     }
 
     s3 = boto3.client(
