@@ -133,6 +133,14 @@ class Settings(BaseSettings):
     bypass_otp: bool = Field(default=False)
 
     # ------------------------------------------------------------------
+    # Growth — free credits granted once per user on first registration
+    # ------------------------------------------------------------------
+    signup_bonus_paise: int = Field(
+        default=2000,
+        description="Free credits (paise) granted once to a new user on signup. 0 disables it.",
+    )
+
+    # ------------------------------------------------------------------
     # Inspire feature — stock photo/video search
     # ------------------------------------------------------------------
     pexels_api_key: str = Field(default="", description="Pexels API key for stock photo search")

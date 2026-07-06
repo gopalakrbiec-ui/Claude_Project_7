@@ -30,6 +30,29 @@ def _verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
+async def _grant_signup_bonus(db: AsyncSession, user: User) -> None:
+    """
+    Credit a one-time signup bonus to a newly created user.
+    Idempotent via a per-user key — safe even if called twice.
+    """
+    from app.core.config import get_settings
+    from app.models.ledger import LedgerReason
+    from app.services.credits import CreditsService, LedgerRef
+
+    settings = get_settings()
+    if settings.signup_bonus_paise <= 0:
+        return
+
+    await CreditsService(db).credit(
+        user_id=user.id,
+        delta_paise=settings.signup_bonus_paise,
+        reason=LedgerReason.signup_bonus,
+        ref=LedgerRef(ref_type="signup", ref_id=user.id),
+        idempotency_key=f"signup_bonus:{user.id}",
+    )
+    await db.commit()
+
+
 def _token_response(user: User, is_new: bool) -> dict:
     identifier = user.phone or user.email or str(user.id)
     return {
@@ -102,6 +125,7 @@ async def register(
         hashed_password=_hash_password(body.password),
     )
     await db.commit()
+    await _grant_signup_bonus(db, user)
     return _token_response(user, is_new=True)
 
 
@@ -122,6 +146,7 @@ async def request_otp(
 async def verify_otp(
     body: VerifyOtpIn,
     svc: Annotated[AuthService, Depends(get_auth_service)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> VerifyOtpOut:
     """Verify OTP and return a JWT. Creates the user account on first login."""
     try:
@@ -132,6 +157,9 @@ async def verify_otp(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except InvalidOtpError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    if result.is_new_user:
+        await _grant_signup_bonus(db, result.user)
 
     return VerifyOtpOut(
         access_token=result.access_token,

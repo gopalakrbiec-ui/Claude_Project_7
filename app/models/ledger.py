@@ -10,10 +10,11 @@ from app.core.database import Base
 
 
 class LedgerReason(str, enum.Enum):
-    purchase = "purchase"      # credits bought via payment
-    spend = "spend"            # credits consumed by an order
-    refund = "refund"          # credits returned after rejection / failure
-    commission = "commission"  # commission credited to an agent
+    purchase = "purchase"            # credits bought via payment
+    spend = "spend"                  # credits consumed by an order
+    refund = "refund"                # credits returned after rejection / failure
+    commission = "commission"        # commission credited to an agent
+    signup_bonus = "signup_bonus"    # free credits granted to a new user on registration
 
 
 class CreditLedger(Base):
