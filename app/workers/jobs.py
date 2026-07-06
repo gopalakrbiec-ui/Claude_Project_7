@@ -60,7 +60,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
             photo_bytes = await _fetch_bytes(presign(key_in))
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).style_filter(photo_bytes, style)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).style_filter(photo_bytes, style)
             return data
         from app.adapters.ai_tools import StyleTransferAdapter
         data, _ = await StyleTransferAdapter(api_key=fal_key, cost_paise=cost).apply_style(
@@ -73,7 +73,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
             photo_bytes = await _fetch_bytes(presign(key_in))
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).bg_replace(photo_bytes, prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).bg_replace(photo_bytes, prompt)
             return data
         from app.adapters.ai_tools import AiBgReplaceAdapter
         data, _ = await AiBgReplaceAdapter(api_key=fal_key, cost_paise=cost).replace_bg(
@@ -94,7 +94,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 "Keep the person's face, skin tone, body pose, and background unchanged. "
                 "Only replace their clothing with the outfit from the second image."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).edit_multi(
                 [photo_bytes, garment_bytes], prompt
             )
             return data
@@ -117,7 +117,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 "Keep the face, skin tone, clothing, pose, and background completely unchanged. "
                 "Only the hair colour and style should change."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(photo_bytes, prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).edit(photo_bytes, prompt)
             return data
         from app.adapters.ai_tools import HairSalonAdapter
         data, _ = await HairSalonAdapter(api_key=fal_key, cost_paise=cost).change_hair(
@@ -145,7 +145,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
                 f"The first image is the person. Creatively transform their photo: {prompt}.{ref_note} "
                 "Keep the person's face and identity clearly recognisable."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(images, full_prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).edit_multi(images, full_prompt)
             return data
         from app.adapters.ai_tools import RemixAdapter
         data, _ = await RemixAdapter(api_key=fal_key, cost_paise=cost).remix(
@@ -172,7 +172,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
             "Preserve their skin tones, clothing colours, and distinctive features. "
             "Make the result look like a natural, high-quality photograph."
         )
-        data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(
+        data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).edit_multi(
             images, full_prompt
         )
         return data
@@ -182,7 +182,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         aspect_ratio = params.get("aspect_ratio", "9:16")
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).generate(
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model, timeout_seconds=settings.gen_image_timeout_seconds).generate(
                 prompt, aspect_ratio=aspect_ratio
             )
             return data

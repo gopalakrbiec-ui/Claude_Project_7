@@ -320,6 +320,10 @@ class WorkerSettings:
     max_jobs = get_settings().arq_max_jobs
     functions = [generate_content, run_tool]
     cron_jobs: list = []
+    # arq's default job_timeout (300s) equals our OpenAI multi-image edit timeout,
+    # so a job could be killed by arq right as the adapter itself would time out.
+    # Give real headroom above the slowest adapter call (gen_video_timeout_seconds).
+    job_timeout = 900
 
     on_startup = on_startup
     on_shutdown = on_shutdown
