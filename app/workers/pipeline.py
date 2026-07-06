@@ -222,7 +222,7 @@ async def run_generate(
 
 async def run_watermark(output: GenerationOutput) -> bytes:
     """
-    Stamp the Yadein brand watermark on the bottom-centre of the image.
+    Stamp the Savi Nenapu heart-icon watermark in the bottom-right corner.
     Pure bytes transform — no DB writes, no external calls.
     Video output is returned unchanged (watermark via ffmpeg is a future task).
     """
@@ -233,46 +233,58 @@ async def run_watermark(output: GenerationOutput) -> bytes:
     return await asyncio.to_thread(_apply_watermark, output.media_bytes)
 
 
+def _heart_polygon_points(cx: float, cy: float, size: float) -> list[tuple[float, float]]:
+    """
+    Parametric heart curve, sampled into polygon points.
+    (x,y) = (16 sin^3 t, 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t), t in [0, 2*pi].
+    Scaled to `size` and centred at (cx, cy); y is flipped since curve y grows
+    upward but image coordinates grow downward.
+    """
+    import math
+
+    points: list[tuple[float, float]] = []
+    steps = 60
+    scale = size / 32.0  # curve spans roughly [-16,16] x [-17,13]
+    for i in range(steps):
+        t = 2 * math.pi * i / steps
+        x = 16 * (math.sin(t) ** 3)
+        y = 13 * math.cos(t) - 5 * math.cos(2 * t) - 2 * math.cos(3 * t) - math.cos(4 * t)
+        points.append((cx + x * scale, cy - y * scale))
+    return points
+
+
 def _apply_watermark(image_bytes: bytes) -> bytes:
     """
-    Overlay a semi-transparent 'Yadein ✨' pill at the bottom-centre.
-    Uses Pillow — runs in a thread pool to avoid blocking the event loop.
+    Overlay a small, semi-transparent Savi Nenapu heart icon in the
+    bottom-right corner — subtle, Gemini-style corner mark rather than a
+    banner. Uses Pillow — runs in a thread pool to avoid blocking the event loop.
     """
     try:
         import io
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
 
         img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
         w, h = img.size
 
-        # Watermark text and sizing
-        text = "✨ Yadein"
-        font_size = max(24, h // 28)
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
-        except OSError:
-            font = ImageFont.load_default()
-
-        # Measure text
-        dummy = Image.new("RGBA", (1, 1))
-        draw_dummy = ImageDraw.Draw(dummy)
-        bbox = draw_dummy.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-        # Draw pill background
-        pad_x, pad_y = 20, 10
-        pill_w, pill_h = tw + pad_x * 2, th + pad_y * 2
-        pill_x = (w - pill_w) // 2
-        pill_y = h - pill_h - max(20, h // 30)
+        # Icon size scales with image — small corner mark, not a banner
+        icon_size = max(28, h // 18)
+        margin = max(16, h // 40)
+        cx = w - margin - icon_size / 2
+        cy = h - margin - icon_size / 2
 
         overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
-        draw.rounded_rectangle(
-            [pill_x, pill_y, pill_x + pill_w, pill_y + pill_h],
-            radius=pill_h // 2,
-            fill=(0, 0, 0, 140),
+
+        # Subtle dark backing circle so the heart stays visible on any background
+        backing_r = icon_size * 0.72
+        draw.ellipse(
+            [cx - backing_r, cy - backing_r, cx + backing_r, cy + backing_r],
+            fill=(0, 0, 0, 90),
         )
-        draw.text((pill_x + pad_x, pill_y + pad_y), text, font=font, fill=(255, 255, 255, 230))
+
+        # Two overlapping hearts (brand mark), semi-transparent white/red
+        draw.polygon(_heart_polygon_points(cx, cy, icon_size * 0.62), fill=(255, 255, 255, 215))
+        draw.polygon(_heart_polygon_points(cx, cy, icon_size * 0.62), outline=(224, 38, 60, 235), width=2)
 
         composited = Image.alpha_composite(img, overlay).convert("RGB")
         out = io.BytesIO()
