@@ -20,6 +20,10 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # alembic/env.py imports the full Settings() class, which requires
+          # these even though migrations don't use them functionally.
+          APP_SECRET_KEY: ci-placeholder-not-used-by-migrations
+          REDIS_URL: redis://localhost:6379/0
         run: alembic upgrade head
 
       - name: Add new templates
