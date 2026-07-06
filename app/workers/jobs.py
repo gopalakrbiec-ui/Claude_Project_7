@@ -89,12 +89,13 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
             photo_bytes = await _fetch_bytes(presign(person_key))
             garment_bytes = await _fetch_bytes(garment_url)
             prompt = (
-                "Dress the person in this exact outfit from the reference image. "
+                "The first image is the person. The second image is the outfit/garment reference. "
+                "Dress the person from the first image in the exact outfit shown in the second image. "
                 "Keep the person's face, skin tone, body pose, and background unchanged. "
-                "Only replace the clothing with the outfit shown."
+                "Only replace their clothing with the outfit from the second image."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(
-                photo_bytes, prompt, mask_bytes=None
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(
+                [photo_bytes, garment_bytes], prompt
             )
             return data
         person_url = presign(person_key)
@@ -130,12 +131,21 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         prompt = params.get("prompt", "creative remix")
         if openai_key:
             from app.adapters.openai_image import OpenAIImageAdapter
-            photo_bytes = await _fetch_bytes(presign(params["person_key"]))
+            images = [await _fetch_bytes(presign(params["person_key"]))]
+            ref_note = ""
+            style_url = params.get("style_image_url")
+            accessory_url = params.get("accessory_image_url")
+            if style_url:
+                images.append(await _fetch_bytes(style_url))
+                ref_note += " The next image is a style reference — apply its visual style/theme."
+            if accessory_url:
+                images.append(await _fetch_bytes(accessory_url))
+                ref_note += " The next image is an accessory/prop reference — incorporate it naturally."
             full_prompt = (
-                f"Creatively transform this person's photo: {prompt}. "
+                f"The first image is the person. Creatively transform their photo: {prompt}.{ref_note} "
                 "Keep the person's face and identity clearly recognisable."
             )
-            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit(photo_bytes, full_prompt)
+            data, _ = await OpenAIImageAdapter(api_key=openai_key, cost_paise=cost, model=openai_model).edit_multi(images, full_prompt)
             return data
         from app.adapters.ai_tools import RemixAdapter
         data, _ = await RemixAdapter(api_key=fal_key, cost_paise=cost).remix(
