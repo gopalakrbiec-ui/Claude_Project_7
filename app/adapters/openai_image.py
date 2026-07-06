@@ -45,12 +45,47 @@ _STYLE_PROMPTS: dict[str, str] = {
 
 
 
+def _raise_with_body(resp: httpx.Response, label: str) -> None:
+    """
+    Like resp.raise_for_status(), but includes OpenAI's JSON error body in the
+    exception message. Bare HTTPStatusError only shows "400 Bad Request" with
+    no indication of *why* — OpenAI's body has the actual reason (bad param,
+    image too small/large, unsupported count, etc.) and is essential for
+    diagnosing failures from worker logs alone.
+    """
+    if resp.is_success:
+        return
+    try:
+        body = resp.json()
+    except Exception:
+        body = resp.text[:500]
+    logger.error("OpenAI %s error %s: %s", label, resp.status_code, body)
+    raise ProviderError(f"OpenAI {label} failed ({resp.status_code}): {body}")
+
+
+_MIN_TOTAL_PIXELS = 655_360      # OpenAI images/edits minimum (e.g. ~809x809)
+_MAX_EDGE_PIXELS = 3840          # OpenAI images/edits maximum single edge
+
+
 def _ensure_png(data: bytes) -> bytes:
-    """Convert image bytes to PNG if not already PNG."""
+    """
+    Convert image bytes to PNG and normalize dimensions to satisfy OpenAI's
+    images/edits constraints (655,360–8,294,400 total pixels, max edge 3840px).
+    Garment/reference photos are often small thumbnails that violate the
+    minimum, which OpenAI rejects with a bare 400 and no obvious cause.
+    """
     from PIL import Image
-    if data[:4] == b"\x89PNG":
-        return data
     img = Image.open(io.BytesIO(data)).convert("RGBA")
+    w, h = img.size
+
+    total = w * h
+    if total < _MIN_TOTAL_PIXELS:
+        scale = (_MIN_TOTAL_PIXELS / total) ** 0.5
+        img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+    elif max(w, h) > _MAX_EDGE_PIXELS:
+        scale = _MAX_EDGE_PIXELS / max(w, h)
+        img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
@@ -104,7 +139,7 @@ class OpenAIImageAdapter:
                         "output_format": "png",
                     },
                 )
-                resp.raise_for_status()
+                _raise_with_body(resp, "generate")
                 data = resp.json()
 
             image_bytes = await self._extract_bytes(data, client if not client.is_closed else None)
@@ -156,7 +191,7 @@ class OpenAIImageAdapter:
                     headers=self._headers(),
                     files=files,
                 )
-                resp.raise_for_status()
+                _raise_with_body(resp, "edit_multi")
                 data = resp.json()
 
             image_out = await self._extract_bytes(data, None)
