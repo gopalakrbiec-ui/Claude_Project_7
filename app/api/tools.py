@@ -49,19 +49,23 @@ def _safe_idem_key(raw: str) -> str:
 # Tool discovery — Flutter reads this to build the center AI button grid
 # ---------------------------------------------------------------------------
 
+
+# cost_paise below = (provider cost + est. infra overhead) x 1.10 margin,
+# assuming ~2,000 generations/month. Re-derive if real volume differs a lot —
+# infra overhead per generation shrinks fast at higher volume.
 _TOOL_CATALOG = [
-    {"id": "ai-filter",       "name": "AI Filter",        "icon": "auto_awesome",  "cost_paise": 200,  "category": "style"},
-    {"id": "ai-background",   "name": "AI Background",    "icon": "landscape",     "cost_paise": 200,  "category": "edit"},
-    {"id": "ai-outfit",       "name": "AI Outfit",        "icon": "checkroom",     "cost_paise": 400,  "category": "fashion"},
-    {"id": "hair-salon",      "name": "Hair Salon",       "icon": "content_cut",   "cost_paise": 200,  "category": "fashion"},
-    {"id": "remix",           "name": "Remix",            "icon": "shuffle",       "cost_paise": 500,  "category": "creative"},
-    {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 200,  "category": "creative"},
-    {"id": "photo-merge",     "name": "Photo Merge",     "icon": "group",         "cost_paise": 500,  "category": "creative",
+    {"id": "ai-filter",       "name": "AI Filter",        "icon": "auto_awesome",  "cost_paise": 700,  "category": "style"},
+    {"id": "ai-background",   "name": "AI Background",    "icon": "landscape",     "cost_paise": 700,  "category": "edit"},
+    {"id": "ai-outfit",       "name": "AI Outfit",        "icon": "checkroom",     "cost_paise": 900,  "category": "fashion"},
+    {"id": "hair-salon",      "name": "Hair Salon",       "icon": "content_cut",   "cost_paise": 700,  "category": "fashion"},
+    {"id": "remix",           "name": "Remix",            "icon": "shuffle",       "cost_paise": 1000, "category": "creative"},
+    {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 700,  "category": "creative"},
+    {"id": "photo-merge",     "name": "Photo Merge",     "icon": "group",         "cost_paise": 1100, "category": "creative",
      "keywords": ["together", "hugging", "kissing", "collage", "side by side", "wedding", "romantic", "friends"]},
-    {"id": "kling-video",     "name": "Kling-video",     "icon": "play_circle",   "cost_paise": 2500, "category": "video"},
-    {"id": "wan-video",       "name": "Wan-video",       "icon": "play_circle",   "cost_paise": 2000, "category": "video"},
-    {"id": "seedance-video",  "name": "Seedance-video",  "icon": "play_circle",   "cost_paise": 1500, "category": "video"},
-    {"id": "veo-video",       "name": "Veo-video",       "icon": "play_circle",   "cost_paise": 3000, "category": "video"},
+    {"id": "kling-video",     "name": "Kling-video",     "icon": "play_circle",   "cost_paise": 4300, "category": "video"},
+    {"id": "wan-video",       "name": "Wan-video",       "icon": "play_circle",   "cost_paise": 2200, "category": "video"},
+    {"id": "seedance-video",  "name": "Seedance-video",  "icon": "play_circle",   "cost_paise": 2000, "category": "video"},
+    {"id": "veo-video",       "name": "Veo-video",       "icon": "play_circle",   "cost_paise": 4900, "category": "video"},
 ]
 
 
@@ -71,14 +75,14 @@ async def list_tools() -> dict:
     return {"tools": _TOOL_CATALOG}
 
 
-# Cost per tool in paise
-_COST_AI_FILTER = 200
-_COST_TRYON = 400
-_COST_HAIR = 200
-_COST_BG_REPLACE = 200
-_COST_REMIX = 500
-_COST_TEXT2IMG = 200
-_COST_PHOTO_MERGE = 500
+# Cost per tool in paise — kept in sync with _TOOL_CATALOG above
+_COST_AI_FILTER = 700
+_COST_TRYON = 900
+_COST_HAIR = 700
+_COST_BG_REPLACE = 700
+_COST_REMIX = 1000
+_COST_TEXT2IMG = 700
+_COST_PHOTO_MERGE = 1100
 
 _PHOTO_MERGE_KEYWORDS: dict[str, str] = {
     "together":    "Place all the people together in one natural photo, standing or sitting close together, smiling.",
@@ -93,10 +97,10 @@ _PHOTO_MERGE_KEYWORDS: dict[str, str] = {
 
 # Video tool costs (paise)
 _VIDEO_COSTS: dict[str, int] = {
-    "kling-video":    2500,
-    "wan-video":      2000,
-    "seedance-video": 1500,
-    "veo-video":      3000,
+    "kling-video":    4300,
+    "wan-video":      2200,
+    "seedance-video": 2000,
+    "veo-video":      4900,
 }
 
 
