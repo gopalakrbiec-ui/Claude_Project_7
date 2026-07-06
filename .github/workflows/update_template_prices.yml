@@ -1,0 +1,23 @@
+name: Reprice Templates to Flat 10% Margin
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  update-template-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install sqlalchemy asyncpg
+
+      - name: Update template prices
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/update_template_prices.py

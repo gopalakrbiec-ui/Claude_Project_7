@@ -40,7 +40,7 @@ TEMPLATES = [
             "and flickering oil diyas. Warm golden hour light. Ultra-realistic DSLR photography, "
             "8K resolution, shallow depth of field."
         ),
-        "base_price_paise": 2900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Royal Sherwani",
@@ -52,7 +52,7 @@ TEMPLATES = [
             "Groom in a rich red and gold embroidered sherwani standing in front of a Rajasthani palace "
             "archway. Regal, cinematic lighting. 8K DSLR portrait, bokeh background."
         ),
-        "base_price_paise": 4900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Bridal Lehenga",
@@ -63,7 +63,7 @@ TEMPLATES = [
             "Bride in an ornate red and gold bridal lehenga with heavy jewelry, standing in a lush "
             "flower-filled garden at golden hour. Professional wedding photography, 8K, cinematic."
         ),
-        "base_price_paise": 4900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Garden Wedding",
@@ -74,7 +74,7 @@ TEMPLATES = [
             "Couple standing under a floral arch surrounded by white roses and greenery. "
             "Soft natural light, elegant outdoor setting. 8K DSLR wedding portrait."
         ),
-        "base_price_paise": 3500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Royal Couple Portrait",
@@ -85,7 +85,7 @@ TEMPLATES = [
             "Couple dressed in matching royal outfits — bride in lehenga, groom in sherwani — "
             "seated on an ornate gold throne. Palace backdrop, dramatic lighting. 8K cinematic."
         ),
-        "base_price_paise": 5900,
+        "base_price_paise": 1200,
     },
 
     # ── Birthday ──────────────────────────────────────────────────────────────
@@ -99,7 +99,7 @@ TEMPLATES = [
             "Person celebrating their birthday surrounded by golden balloons, confetti, and a "
             "tiered cake. Joyful party atmosphere. 8K DSLR portrait, warm celebratory lighting."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Kids Birthday Party",
@@ -110,7 +110,7 @@ TEMPLATES = [
             "Child at a colorful birthday party with balloons, confetti, and a cartoon-themed cake. "
             "Bright cheerful setting. 8K professional photography."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Milestone Birthday (50/60/75)",
@@ -121,7 +121,7 @@ TEMPLATES = [
             "Elegant milestone birthday portrait with golden '50' or milestone number decor, "
             "warm candlelight, and flowers. Dignified, celebratory. 8K DSLR."
         ),
-        "base_price_paise": 2500,
+        "base_price_paise": 1200,
     },
 
     # ── Fashion & Portrait ────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ TEMPLATES = [
             "Professional portrait of a person in a sharp tailored business suit, standing in a "
             "modern glass office building. Confident posture, natural window light. 8K DSLR."
         ),
-        "base_price_paise": 1900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Traditional Kurta Look",
@@ -145,7 +145,7 @@ TEMPLATES = [
             "Man in an elegant embroidered kurta-pajama standing against a haveli wall with "
             "floral decorations. Warm evening light. Ultra-realistic 8K DSLR portrait."
         ),
-        "base_price_paise": 1900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Saree Elegance",
@@ -156,7 +156,7 @@ TEMPLATES = [
             "Woman in a silk Kanjivaram saree with gold jewelry, standing in a sunlit temple "
             "courtyard with floral rangoli. Graceful, editorial 8K DSLR photography."
         ),
-        "base_price_paise": 1900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Bollywood Glamour",
@@ -168,7 +168,7 @@ TEMPLATES = [
             "Glamorous Bollywood-style portrait with dramatic studio lighting, sparkly outfit, "
             "and magazine-quality makeup. Cinematic 8K high-fashion photography."
         ),
-        "base_price_paise": 2900,
+        "base_price_paise": 1200,
     },
 
     # ── Baby & Family ─────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ TEMPLATES = [
             "Soft pastel baby shower setting with balloons, flowers, and a teddy bear. "
             "Joyful expecting-mother portrait. 8K natural light photography."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Naming Ceremony",
@@ -192,7 +192,7 @@ TEMPLATES = [
             "Namkaran ceremony setting with baby in traditional dress held by family, "
             "surrounded by marigold flowers and diyas. Warm, intimate 8K portrait."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Family Portrait",
@@ -203,7 +203,7 @@ TEMPLATES = [
             "Happy Indian family in matching ethnic outfits seated in a beautifully decorated "
             "living room. Warm golden light, joyful expressions. Professional 8K DSLR."
         ),
-        "base_price_paise": 2500,
+        "base_price_paise": 1200,
     },
 
     # ── Festival ──────────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ TEMPLATES = [
             "Person in festive Indian ethnic wear surrounded by glowing diyas, sparklers, and "
             "rangoli at Diwali. Warm festive atmosphere. 8K DSLR photography."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Housewarming (Griha Pravesh)",
@@ -227,7 +227,7 @@ TEMPLATES = [
             "Family at a Griha Pravesh ceremony at the entrance of a new home decorated with "
             "marigold torans, diyas, and a rangoli. Joyful, auspicious setting. 8K portrait."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
 
     # ── Bollywood ─────────────────────────────────────────────────────────────
@@ -242,7 +242,7 @@ TEMPLATES = [
             "standing in front of a grand film studio set with spotlights. "
             "Cinematic 8K photography, vibrant colours, movie-poster style."
         ),
-        "base_price_paise": 3900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Retro Bollywood Portrait",
@@ -255,7 +255,7 @@ TEMPLATES = [
             "subject in vintage ethnic dress, classic film-set backdrop. "
             "Stylised as an old Filmfare magazine cover."
         ),
-        "base_price_paise": 3500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Bollywood Hero",
@@ -267,7 +267,7 @@ TEMPLATES = [
             "slow-motion effect, grand palace staircase backdrop. "
             "Cinematic widescreen, 8K DSLR, movie-poster composition."
         ),
-        "base_price_paise": 3500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Punjabi Bride",
@@ -279,7 +279,7 @@ TEMPLATES = [
             "kalire on wrists, standing in a mustard field at golden hour. "
             "8K DSLR wedding photography, Bollywood colour grade."
         ),
-        "base_price_paise": 4500,
+        "base_price_paise": 1200,
     },
 
     # ── Cricket ───────────────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ TEMPLATES = [
             "stadium crowd roaring in the background, confetti falling. "
             "Action 8K sports photography, dramatic stadium lighting."
         ),
-        "base_price_paise": 2900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Stadium Champion",
@@ -306,7 +306,7 @@ TEMPLATES = [
             "fireworks exploding over the stadium, teammates celebrating behind. "
             "Epic 8K sports photography, golden hour, ultra-wide lens."
         ),
-        "base_price_paise": 3500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Street Cricket Star",
@@ -318,7 +318,7 @@ TEMPLATES = [
             "gully cricket setting with makeshift wickets, joy and passion on face. "
             "Documentary-style 8K photography, warm Indian summer light."
         ),
-        "base_price_paise": 1900,
+        "base_price_paise": 1200,
     },
 
     # ── Royal India ───────────────────────────────────────────────────────────
@@ -333,7 +333,7 @@ TEMPLATES = [
             "wearing a jewelled turban, silk achkan, and pearl necklace. "
             "Regal oil-painting lighting, 8K, Mughal-era grandeur."
         ),
-        "base_price_paise": 5900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Royal Maharani",
@@ -345,7 +345,7 @@ TEMPLATES = [
             "zenana with intricate jali screens and marigold garlands. "
             "Royal portrait, 8K DSLR, Mughal miniature painting colour palette."
         ),
-        "base_price_paise": 5900,
+        "base_price_paise": 1200,
     },
     {
         "name": "Rajput Warrior",
@@ -357,7 +357,7 @@ TEMPLATES = [
             "Aravalli hills in the background. "
             "Epic cinematic 8K photography, dramatic golden-red sky."
         ),
-        "base_price_paise": 4900,
+        "base_price_paise": 1200,
     },
 
     # ── Professional / LinkedIn ───────────────────────────────────────────────
@@ -372,7 +372,7 @@ TEMPLATES = [
             "neutral studio background with soft bokeh. "
             "Corporate headshot, 8K DSLR, LinkedIn profile photo style."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Startup Founder",
@@ -384,7 +384,7 @@ TEMPLATES = [
             "co-working space with laptops and whiteboards. "
             "Candid 8K corporate photography, entrepreneurial energy."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
     {
         "name": "Campus Yearbook",
@@ -396,7 +396,7 @@ TEMPLATES = [
             "Soft natural light, campus greenery in background. "
             "Classic 8K yearbook portrait, warm celebratory atmosphere."
         ),
-        "base_price_paise": 1500,
+        "base_price_paise": 1200,
     },
 ]
 
