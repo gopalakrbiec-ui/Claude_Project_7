@@ -29,6 +29,21 @@ from app.services.credits import CreditsService, InsufficientBalanceError, Ledge
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tools", tags=["tools"])
 
+# credit_ledger.idempotency_key is VARCHAR(128). Long R2 keys (photo-merge
+# joins 2-4 of them) can push raw concatenation past that limit, which
+# Postgres rejects with an uncaught DataError → bare 500 before the job
+# is even enqueued. Hash anything that could exceed a safe margin.
+_IDEM_KEY_MAX = 120
+
+
+def _safe_idem_key(raw: str) -> str:
+    if len(raw) <= _IDEM_KEY_MAX:
+        return raw
+    import hashlib
+    prefix = raw.split(":")[0]
+    digest = hashlib.sha256(raw.encode()).hexdigest()[:32]
+    return f"{prefix}:h:{digest}"
+
 
 # ---------------------------------------------------------------------------
 # Tool discovery — Flutter reads this to build the center AI button grid
@@ -395,7 +410,7 @@ async def ai_filter(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobOut:
     """Apply an artistic style filter to a photo."""
-    idem_key = f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}"
+    idem_key = _safe_idem_key(f"tool:ai-filter:{current_user.id}:{body.photo_key}:{body.style}")
     await _charge(db, current_user, _COST_AI_FILTER, "ai-filter", idem_key)
     style = _STYLE_ALIASES.get(body.style.lower().strip(), body.style)
     job_id = await _enqueue("ai-filter", current_user.id, _COST_AI_FILTER, {
@@ -427,7 +442,7 @@ async def ai_outfit(
     if not body.garment_image_url and not garment_key:
         raise HTTPException(status_code=422, detail="Provide garment_photo_key or outfit_photo_key")
 
-    idem_key = f"tool:ai-outfit:{current_user.id}:{person_key}:{(body.garment_image_url or garment_key or '')[:64]}"
+    idem_key = _safe_idem_key(f"tool:ai-outfit:{current_user.id}:{person_key}:{(body.garment_image_url or garment_key or '')[:64]}")
     await _charge(db, current_user, _COST_TRYON, "ai-outfit", idem_key)
 
     job_id = await _enqueue("ai-outfit", current_user.id, _COST_TRYON, {
@@ -455,7 +470,7 @@ async def hair_salon(
     if not body.resolved_hair_desc and not body.hair_style_image_url:
         raise HTTPException(status_code=422, detail="Provide at least hair_colour or hair_style_image_url")
 
-    idem_key = f"tool:hair:{current_user.id}:{body.photo_key}:{body.hair_colour}:{body.hair_style_image_url}"
+    idem_key = _safe_idem_key(f"tool:hair:{current_user.id}:{body.photo_key}:{body.hair_colour}:{body.hair_style_image_url}")
     await _charge(db, current_user, _COST_HAIR, "hair-salon", idem_key)
 
     job_id = await _enqueue("hair-salon", current_user.id, _COST_HAIR, {
@@ -479,7 +494,7 @@ async def ai_background(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobOut:
     """Replace photo background with an AI-generated scene."""
-    idem_key = f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}"
+    idem_key = _safe_idem_key(f"tool:ai-bg:{current_user.id}:{body.photo_key}:{body.prompt[:64]}")
     await _charge(db, current_user, _COST_BG_REPLACE, "ai-background", idem_key)
 
     job_id = await _enqueue("ai-background", current_user.id, _COST_BG_REPLACE, {
@@ -504,7 +519,7 @@ async def remix(
     if not person_key:
         raise HTTPException(status_code=422, detail="Provide person_photo_key or photo_key")
 
-    idem_key = f"tool:remix:{current_user.id}:{person_key}:{body.resolved_prompt[:64]}"
+    idem_key = _safe_idem_key(f"tool:remix:{current_user.id}:{person_key}:{body.resolved_prompt[:64]}")
     await _charge(db, current_user, _COST_REMIX, "remix", idem_key)
 
     job_id = await _enqueue("remix", current_user.id, _COST_REMIX, {
@@ -530,7 +545,7 @@ async def text_to_image(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobOut:
     """Generate an image from a text prompt (freeform chat-to-image)."""
-    idem_key = f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}"
+    idem_key = _safe_idem_key(f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}")
     await _charge(db, current_user, _COST_TEXT2IMG, "text-to-image", idem_key)
 
     job_id = await _enqueue("text-to-image", current_user.id, _COST_TEXT2IMG, {
@@ -556,7 +571,7 @@ async def photo_merge(
     Keywords auto-build a scene prompt; free-text `prompt` is appended.
     Keyword options: together | hugging | kissing | collage | side by side | wedding | romantic | friends
     """
-    idem_key = f"tool:photo-merge:{current_user.id}:{':'.join(sorted(body.photo_keys))}:{','.join(sorted(body.keywords))}"
+    idem_key = _safe_idem_key(f"tool:photo-merge:{current_user.id}:{':'.join(sorted(body.photo_keys))}:{','.join(sorted(body.keywords))}")
     await _charge(db, current_user, _COST_PHOTO_MERGE, "photo-merge", idem_key)
 
     # Build scene description from keywords + free text
@@ -616,7 +631,7 @@ async def _run_video_tool(
     cost = _VIDEO_COSTS[tool_id]
     if not body.photo_key and not body.prompt.strip():
         raise HTTPException(status_code=422, detail="Provide a photo, a prompt, or both")
-    idem_key = f"tool:{tool_id}:{current_user.id}:{body.photo_key or body.prompt[:64]}:{body.duration}"
+    idem_key = _safe_idem_key(f"tool:{tool_id}:{current_user.id}:{body.photo_key or body.prompt[:64]}:{body.duration}")
     await _charge(db, current_user, cost, tool_id, idem_key)
     job_id = await _enqueue(tool_id, current_user.id, cost, {
         "photo_key": body.photo_key,
