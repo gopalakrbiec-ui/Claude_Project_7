@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
     from app.api.uploads import router as uploads_router
     from app.api.tools import router as tools_router
     from app.api.inspire import router as inspire_router
+    from app.api.prompts import router as prompts_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(uploads_router)
     app.include_router(tools_router)
     app.include_router(inspire_router)
+    app.include_router(prompts_router)
 
     return app
 

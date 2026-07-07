@@ -94,8 +94,14 @@ async def create_order(
             payload["user_photo_keys"] = body.user_photo_keys
         elif body.user_photo_key:
             payload["user_photo_key"] = body.user_photo_key
-        if body.user_prompt:
-            payload["user_prompt"] = body.user_prompt
+        user_prompt = body.user_prompt or ""
+        if body.keyword_tags:
+            from app.core.prompt_keywords import build_prompt_fragment
+            fragment = build_prompt_fragment(body.keyword_tags)
+            if fragment:
+                user_prompt = f"{user_prompt}, {fragment}".strip(", ")
+        if user_prompt:
+            payload["user_prompt"] = user_prompt
         payload["aspect_ratio"] = body.aspect_ratio
 
         order = await svc.create_order(

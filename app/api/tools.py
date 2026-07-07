@@ -209,6 +209,7 @@ class RemixIn(BaseModel):
     style_image_url: str | None = Field(default=None)
     accessory_image_url: str | None = Field(default=None)
     strength: float = Field(default=0.85, ge=0.5, le=1.0)
+    keyword_tags: list[str] = Field(default_factory=list, max_length=30)
 
     @property
     def resolved_person_key(self) -> str | None:
@@ -223,12 +224,29 @@ class RemixIn(BaseModel):
 
     @property
     def resolved_prompt(self) -> str:
-        return self.prompt or self.style or self.remix_style or "creative remix"
+        base = self.prompt or self.style or self.remix_style or "creative remix"
+        if self.keyword_tags:
+            from app.core.prompt_keywords import build_prompt_fragment
+            fragment = build_prompt_fragment(self.keyword_tags)
+            if fragment:
+                return f"{base}, {fragment}".strip(", ")
+        return base
 
 
 class TextToImageIn(BaseModel):
-    prompt: str = Field(..., max_length=500, description="Describe the image you want to generate")
+    prompt: str = Field(default="", max_length=500, description="Describe the image you want to generate")
+    keyword_tags: list[str] = Field(default_factory=list, max_length=30)
     aspect_ratio: str = Field(default="9:16", description="9:16 | 1:1 | 16:9 | 4:3 | 3:4")
+
+    @property
+    def resolved_prompt(self) -> str:
+        parts = [self.prompt.strip()] if self.prompt.strip() else []
+        if self.keyword_tags:
+            from app.core.prompt_keywords import build_prompt_fragment
+            fragment = build_prompt_fragment(self.keyword_tags)
+            if fragment:
+                parts.append(fragment)
+        return ", ".join(parts)
 
 
 class PhotoMergeIn(BaseModel):
@@ -548,12 +566,16 @@ async def text_to_image(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> JobOut:
-    """Generate an image from a text prompt (freeform chat-to-image)."""
-    idem_key = _safe_idem_key(f"tool:t2i:{current_user.id}:{body.prompt[:80]}:{body.aspect_ratio}")
+    """Generate an image from a text prompt and/or tap-to-build keyword tags."""
+    prompt = body.resolved_prompt
+    if not prompt:
+        raise HTTPException(status_code=422, detail="Provide a prompt or at least one keyword tag")
+
+    idem_key = _safe_idem_key(f"tool:t2i:{current_user.id}:{prompt[:80]}:{body.aspect_ratio}")
     await _charge(db, current_user, _COST_TEXT2IMG, "text-to-image", idem_key)
 
     job_id = await _enqueue("text-to-image", current_user.id, _COST_TEXT2IMG, {
-        "prompt": body.prompt, "aspect_ratio": body.aspect_ratio, "cost_paise": _COST_TEXT2IMG,
+        "prompt": prompt, "aspect_ratio": body.aspect_ratio, "cost_paise": _COST_TEXT2IMG,
     })
     return JobOut(job_id=job_id, cost_paise=_COST_TEXT2IMG)
 

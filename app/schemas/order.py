@@ -15,6 +15,10 @@ class CreateOrderIn(BaseModel):
     user_photo_keys: list[str] | None = Field(default=None, max_length=4)
     # Optional free-text from user (names, event name, date, etc.)
     user_prompt: str | None = Field(default=None, max_length=500)
+    # Tap-to-build keyword chips, e.g. ["romantic_action:hugging", "location:beach"].
+    # See GET /prompts/keyword-groups. Composed into a descriptive fragment and
+    # merged with user_prompt server-side — spares the user from typing.
+    keyword_tags: list[str] = Field(default_factory=list, max_length=30)
     # Desired output aspect ratio
     aspect_ratio: Literal["1:1", "9:16", "16:9", "4:3", "3:4"] = "9:16"
     # Client generates this UUID to make double-taps idempotent.
