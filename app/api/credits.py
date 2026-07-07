@@ -16,6 +16,32 @@ router = APIRouter(prefix="/credits", tags=["credits"])
 class BalanceOut(BaseModel):
     balance_paise: int
     balance_rupees: str  # e.g. "49.50" — string avoids float representation errors
+    balance_coins: int   # Savi Coins — 1 coin = ₹1 = 100 paise, floor of balance_paise
+
+
+class CurrencyInfoOut(BaseModel):
+    name: str
+    symbol: str
+    unit_rate_paise: int  # paise per 1 unit of the display currency
+
+
+@router.get("/currency-info", response_model=CurrencyInfoOut)
+async def get_currency_info() -> CurrencyInfoOut:
+    """
+    Display-currency metadata for the app UI — lets the coin name/rate change
+    server-side without an app store release. No auth required.
+    """
+    return CurrencyInfoOut(name="Savi Coins", symbol="🪙", unit_rate_paise=100)
+
+
+def _balance_out(balance_paise: int) -> BalanceOut:
+    rupees = balance_paise // 100
+    paise_remainder = balance_paise % 100
+    return BalanceOut(
+        balance_paise=balance_paise,
+        balance_rupees=f"{rupees}.{paise_remainder:02d}",
+        balance_coins=balance_paise // 100,
+    )
 
 
 @router.get("/balance", response_model=BalanceOut)
@@ -25,12 +51,7 @@ async def get_balance(
 ) -> BalanceOut:
     """Return the authenticated user's current credit balance."""
     balance = await CreditsService(db).get_balance(current_user.id)
-    rupees = balance // 100
-    paise_remainder = balance % 100
-    return BalanceOut(
-        balance_paise=balance,
-        balance_rupees=f"{rupees}.{paise_remainder:02d}",
-    )
+    return _balance_out(balance)
 
 
 class DevAddCreditsIn(BaseModel):
@@ -70,9 +91,4 @@ async def dev_add_credits(
     await db.commit()
 
     balance = await svc.get_balance(current_user.id)
-    rupees = balance // 100
-    paise_remainder = balance % 100
-    return BalanceOut(
-        balance_paise=balance,
-        balance_rupees=f"{rupees}.{paise_remainder:02d}",
-    )
+    return _balance_out(balance)

@@ -299,4 +299,5 @@ async def get_me(
     credits_paise = await CreditsService(db).get_balance(current_user.id)
     out = MeOut.model_validate(current_user)
     out.credits_paise = credits_paise
+    out.credits_coins = credits_paise // 100
     return out

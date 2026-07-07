@@ -32,6 +32,7 @@ class MeOut(BaseModel):
     preferred_language: str
     role: str
     credits_paise: int = 0
+    credits_coins: int = 0  # Savi Coins — 1 coin = ₹1 = 100 paise
 
     model_config = {"from_attributes": True}
 
