@@ -2,6 +2,7 @@
 # before Alembic autogenerates migrations.
 from app.models.agent import AgentProfile
 from app.models.generation_job import GenerationJob
+from app.models.inspire_gallery import InspireGalleryItem
 from app.models.ledger import CreditLedger
 from app.models.order import Order
 from app.models.payment import Payment
@@ -16,4 +17,5 @@ __all__ = [
     "Order",
     "GenerationJob",
     "Template",
+    "InspireGalleryItem",
 ]

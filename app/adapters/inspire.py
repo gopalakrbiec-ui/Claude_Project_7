@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _PEXELS_BASE = "https://api.pexels.com/v1"
 _PIXABAY_BASE = "https://pixabay.com/api/videos"
+_UNSPLASH_BASE = "https://api.unsplash.com"
 
 
 class InspireItem:
@@ -104,6 +105,55 @@ class PexelsPhotoAdapter:
                 author=photo.get("photographer", ""),
                 source="pexels",
             ))
+        return items
+
+
+class UnsplashPhotoAdapter:
+    """
+    Search Unsplash for stock photos — noticeably better curated quality than
+    Pexels for fashion, portrait, and wedding-style photography.
+    """
+
+    def __init__(self, access_key: str, timeout: float = 10.0) -> None:
+        self._headers = {"Authorization": f"Client-ID {access_key}"}
+        self._timeout = timeout
+
+    def _to_items(self, photos: list[dict]) -> list[InspireItem]:
+        items: list[InspireItem] = []
+        for photo in photos:
+            urls = photo.get("urls", {})
+            user = photo.get("user", {}) or {}
+            items.append(InspireItem(
+                id=f"unsplash-{photo['id']}",
+                type="photo",
+                thumb_url=urls.get("thumb", ""),
+                preview_url=urls.get("small", ""),
+                full_url=urls.get("regular", urls.get("full", "")),
+                author=user.get("name", ""),
+                source="unsplash",
+            ))
+        return items
+
+    async def search(self, query: str, *, page: int = 1, per_page: int = 20) -> list[InspireItem]:
+        params = {"query": query, "page": page, "per_page": per_page, "orientation": "portrait"}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(f"{_UNSPLASH_BASE}/search/photos", headers=self._headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        items = self._to_items(data.get("results", []))
+        logger.info("Unsplash search q=%r page=%d → %d results", query, page, len(items))
+        return items
+
+    async def curated(self, *, page: int = 1, per_page: int = 20) -> list[InspireItem]:
+        """Fallback for empty-query browse (Unsplash's editorial 'new photos' feed)."""
+        params = {"page": page, "per_page": per_page, "order_by": "popular"}
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.get(f"{_UNSPLASH_BASE}/photos", headers=self._headers, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+
+        items = self._to_items(data if isinstance(data, list) else [])
         return items
 
 

@@ -26,6 +26,16 @@ _KEYWORDS = [
     "birthday", "baby shower", "anniversary",
     "bollywood", "rajasthani", "traditional",
     "flowers", "nature", "golden hour",
+    "wedding dress", "reception dress", "mens fashion", "womens fashion",
+    "personal grooming", "new outfit ideas",
+]
+
+# Categories for the pre-generated AI styling gallery (see /inspire/styled).
+# Shared with scripts/generate_inspire_gallery.py — keep both in sync.
+STYLE_GALLERY_CATEGORIES = [
+    "celebrity-styling", "billionaire-styling", "actress-dressing",
+    "wedding-dress", "reception-dress", "mens-grooming", "womens-fashion",
+    "new-outfit-ideas",
 ]
 
 
@@ -57,8 +67,53 @@ async def get_keywords() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Photos (Pexels)
+# Photos — blends Unsplash (better fashion/portrait quality) + Pexels
 # ---------------------------------------------------------------------------
+
+async def _fetch_blended_photos(q: str, page: int, per_page: int) -> tuple[list[dict], str]:
+    """
+    Queries Unsplash and Pexels concurrently (whichever keys are configured)
+    and interleaves results, Unsplash first. Falls back to whichever single
+    source is available. Raises if neither is configured.
+    """
+    import asyncio
+    from app.core.config import get_settings
+    from app.adapters.inspire import PexelsPhotoAdapter, UnsplashPhotoAdapter
+
+    settings = get_settings()
+    if not settings.pexels_api_key and not settings.unsplash_access_key:
+        raise HTTPException(status_code=503, detail="No Inspire photo provider configured")
+
+    half = max(1, per_page // 2) if (settings.pexels_api_key and settings.unsplash_access_key) else per_page
+
+    async def fetch_unsplash() -> list:
+        if not settings.unsplash_access_key:
+            return []
+        adapter = UnsplashPhotoAdapter(access_key=settings.unsplash_access_key)
+        if q.strip():
+            return await adapter.search(q.strip(), page=page, per_page=half)
+        return await adapter.curated(page=page, per_page=half)
+
+    async def fetch_pexels() -> list:
+        if not settings.pexels_api_key:
+            return []
+        adapter = PexelsPhotoAdapter(api_key=settings.pexels_api_key)
+        if q.strip():
+            return await adapter.search(q.strip(), page=page, per_page=half)
+        return await adapter.curated(page=page, per_page=half)
+
+    unsplash_items, pexels_items = await asyncio.gather(fetch_unsplash(), fetch_pexels())
+    combined = [item.to_dict() for item in [*unsplash_items, *pexels_items]]
+
+    if settings.unsplash_access_key and settings.pexels_api_key:
+        source = "unsplash+pexels"
+    elif settings.unsplash_access_key:
+        source = "unsplash"
+    else:
+        source = "pexels"
+
+    return combined, source
+
 
 @router.get("/photos")
 async def search_photos(
@@ -66,34 +121,35 @@ async def search_photos(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=40),
 ) -> dict:
-    """Search Pexels for stock photos."""
+    """Search for stock photos — blends Unsplash + Pexels when both are configured."""
     from app.core.config import get_settings
-    from app.adapters.inspire import PexelsPhotoAdapter
 
     settings = get_settings()
-    if not settings.pexels_api_key:
-        raise HTTPException(status_code=503, detail="Pexels API key not configured")
+    cache_key = _cache_key("blend", q or "__curated__", page)
 
-    adapter = PexelsPhotoAdapter(api_key=settings.pexels_api_key)
-    ttl = settings.inspire_cache_ttl_seconds
-    cache_key = _cache_key("pexels", q or "__curated__", page)
-
-    async def fetch():
-        if q.strip():
-            return await adapter.search(q.strip(), page=page, per_page=per_page)
-        return await adapter.curated(page=page, per_page=per_page)
+    async def fetch_and_cache() -> list[dict]:
+        from app.core.redis import get_redis
+        redis = get_redis()
+        raw = await redis.get(cache_key)
+        if raw:
+            return json.loads(raw)
+        items, _ = await _fetch_blended_photos(q, page, per_page)
+        await redis.set(cache_key, json.dumps(items), ex=settings.inspire_cache_ttl_seconds)
+        return items
 
     try:
-        items = await _cached_search(cache_key, ttl, fetch)
+        items = await fetch_and_cache()
+    except HTTPException:
+        raise
     except Exception as exc:
-        logger.exception("Pexels search failed: q=%r", q)
+        logger.exception("Inspire photo search failed: q=%r", q)
         raise HTTPException(status_code=502, detail=f"Photo search unavailable: {exc}") from exc
 
-    return {"results": items, "page": page, "per_page": per_page, "source": "pexels"}
+    return {"results": items, "page": page, "per_page": per_page}
 
 
 # ---------------------------------------------------------------------------
-# Combined search — Pexels photos only for now
+# Combined search — alias of /photos
 # ---------------------------------------------------------------------------
 
 @router.get("")
@@ -102,28 +158,57 @@ async def search_inspire(
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=40),
 ) -> dict:
-    """Inspire search — returns Pexels stock photos. Curated feed when query is empty."""
-    from app.core.config import get_settings
-    from app.adapters.inspire import PexelsPhotoAdapter
+    """Inspire search — same as /inspire/photos. Curated feed when query is empty."""
+    return await search_photos(q=q, page=page, per_page=per_page)
 
-    settings = get_settings()
-    if not settings.pexels_api_key:
-        raise HTTPException(status_code=503, detail="Pexels API key not configured")
 
-    adapter = PexelsPhotoAdapter(api_key=settings.pexels_api_key)
-    cache_key = _cache_key("pexels", q or "__curated__", page)
+# ---------------------------------------------------------------------------
+# AI-generated styling gallery — celebrity/billionaire/actress styling etc.
+# Pre-generated once via scripts/generate_inspire_gallery.py, stored in R2.
+# Sidesteps celebrity-photo licensing/publicity-rights issues entirely since
+# every image is originally generated, not a real photo.
+# ---------------------------------------------------------------------------
 
-    async def fetch():
-        if q.strip():
-            return await adapter.search(q.strip(), page=page, per_page=per_page)
-        return await adapter.curated(page=page, per_page=per_page)
+@router.get("/styled")
+async def get_styled_gallery(
+    category: str = Query(default="", description="Filter by category; empty returns all"),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=40),
+) -> dict:
+    """Returns pre-generated AI styling inspiration images (no live API call)."""
+    from sqlalchemy import select
+    from app.core.database import get_session_factory
+    from app.models.inspire_gallery import InspireGalleryItem
 
-    try:
-        items = await _cached_search(cache_key, settings.inspire_cache_ttl_seconds, fetch)
-    except Exception as exc:
-        logger.exception("Pexels search failed: q=%r", q)
-        raise HTTPException(status_code=502, detail=f"Search unavailable: {exc}") from exc
+    factory = get_session_factory()
+    offset = (page - 1) * per_page
 
-    return {"results": items, "page": page, "per_page": per_page, "source": "pexels"}
+    async with factory() as session:
+        stmt = select(InspireGalleryItem).where(InspireGalleryItem.active.is_(True))
+        if category.strip():
+            stmt = stmt.where(InspireGalleryItem.category == category.strip().lower())
+        stmt = stmt.order_by(InspireGalleryItem.id.desc()).offset(offset).limit(per_page)
+        rows = (await session.execute(stmt)).scalars().all()
+
+    results = [
+        {
+            "id": f"styled-{row.id}",
+            "type": "photo",
+            "category": row.category,
+            "thumb_url": row.image_url,
+            "preview_url": row.image_url,
+            "full_url": row.image_url,
+            "author": "Savi Nenapu",
+            "source": "ai-styled",
+        }
+        for row in rows
+    ]
+    return {"results": results, "page": page, "per_page": per_page}
+
+
+@router.get("/styled/categories")
+async def get_styled_categories() -> dict:
+    """Returns the fixed category list for the AI-generated styling gallery."""
+    return {"categories": STYLE_GALLERY_CATEGORIES}
 
 

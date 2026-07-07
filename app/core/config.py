@@ -145,6 +145,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     pexels_api_key: str = Field(default="", description="Pexels API key for stock photo search")
     pixabay_api_key: str = Field(default="", description="Pixabay API key for stock video search")
+    unsplash_access_key: str = Field(default="", description="Unsplash API access key — better fashion/portrait quality than Pexels")
     inspire_cache_ttl_seconds: int = Field(default=3600, description="Redis TTL for inspire search results")
 
     # Comma-separated list of allowed CORS origins in production.
