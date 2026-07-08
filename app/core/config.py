@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     # Growth — free credits granted once per user on first registration
     # ------------------------------------------------------------------
     signup_bonus_paise: int = Field(
-        default=2000,
+        default=10000,
         description="Free credits (paise) granted once to a new user on signup. 0 disables it.",
     )
 
