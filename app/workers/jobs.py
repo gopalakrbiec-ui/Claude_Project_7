@@ -23,6 +23,63 @@ logger = logging.getLogger(__name__)
 
 _TOOL_JOB_TTL = 90 * 86400  # 90 days — matches per-user history sorted set TTL
 
+# Each fal.ai video model accepts a different duration format/range. Flutter
+# sends one shared duration value across all four video tools (e.g. Veo's
+# "4s" format), which fails validation on Kling/Seedance/Wan. Normalize
+# defensively instead of surfacing a raw fal.ai 422 to the user.
+_VIDEO_DURATION_ALLOWED: dict[str, set[str]] = {
+    "animate-photo":  {"5", "10"},
+    "kling-video":    {"5", "10"},
+    "seedance-video": {"2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"},
+    "wan-video":      {"5"},
+    "veo-video":      {"4s", "6s", "8s"},
+}
+_VIDEO_DURATION_DEFAULT: dict[str, str] = {
+    "animate-photo":  "5",
+    "kling-video":    "5",
+    "seedance-video": "5",
+    "wan-video":      "5",
+    "veo-video":      "4s",
+}
+
+
+def _normalize_duration(tool_name: str, raw: str) -> str:
+    """Coerce an incoming duration value to one this tool's fal.ai model accepts."""
+    allowed = _VIDEO_DURATION_ALLOWED.get(tool_name, set())
+    default = _VIDEO_DURATION_DEFAULT.get(tool_name, "5")
+    if raw in allowed:
+        return raw
+
+    # Strip a trailing "s" and try to match/clamp to the nearest allowed value
+    digits = raw[:-1] if raw.endswith("s") else raw
+    try:
+        n = int(digits)
+    except ValueError:
+        return default
+
+    candidate = f"{n}s" if tool_name == "veo-video" else str(n)
+    if candidate in allowed:
+        return candidate
+
+    # Clamp to nearest allowed numeric value
+    numeric_allowed = sorted(
+        int(v[:-1]) if v.endswith("s") else int(v) for v in allowed
+    )
+    if not numeric_allowed:
+        return default
+    nearest = min(numeric_allowed, key=lambda v: abs(v - n))
+    return f"{nearest}s" if tool_name == "veo-video" else str(nearest)
+
+
+def _user_facing_error(exc: Exception) -> str:
+    """Translate known provider errors into a clean, user-facing message."""
+    text = str(exc)
+    if "safety system" in text or "rejected by the safety system" in text:
+        return "Your photos couldn't be processed due to content safety policies. Please try different photos."
+    if "Client error '400" in text and "images/edits" in text:
+        return "This combination of photos couldn't be processed. Please try different photos."
+    return text[:200]
+
 
 # ---------------------------------------------------------------------------
 # Tool job — async photo-tool execution
@@ -212,7 +269,7 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
     if tool_name in _VIDEO_TOOL_MODELS:
         from app.adapters.fal import FalVideoAdapter
         prompt = params.get("prompt", "gentle motion, cinematic")
-        duration = params.get("duration", "5")
+        duration = _normalize_duration(tool_name, params.get("duration", "5"))
         aspect_ratio = params.get("aspect_ratio", "9:16")
 
         if key_in:
@@ -304,9 +361,34 @@ async def run_tool(
 
     except Exception as exc:
         logger.exception("run_tool: failed job_id=%s tool=%s", job_id, tool_name)
+
+        # Refund the charge — the job failed before producing any output, so
+        # the user should not be left out of pocket. Idempotent per job_id,
+        # safe even if the job is retried. Skipped when bypass_payments is on
+        # since no charge was ever made in that case.
+        try:
+            settings_for_refund = get_settings()
+            if not settings_for_refund.bypass_payments and cost_paise > 0:
+                from app.services.credits import CreditsService, LedgerRef
+                from app.models.ledger import LedgerReason
+
+                session = ctx.get("session")
+                if session is not None:
+                    await CreditsService(session).credit(
+                        user_id=user_id,
+                        delta_paise=cost_paise,
+                        reason=LedgerReason.refund,
+                        ref=LedgerRef(ref_type="tool", ref_id=0),
+                        idempotency_key=f"refund:tool:{job_id}",
+                    )
+                    await session.commit()
+                    logger.info("run_tool: refunded %d paise for failed job_id=%s user=%s", cost_paise, job_id, user_id)
+        except Exception:
+            logger.exception("run_tool: refund failed for job_id=%s user=%s — needs manual reconciliation", job_id, user_id)
+
         await redis.set(
             redis_key,
-            json.dumps({"status": "failed", "error": str(exc)[:200], "cost_paise": cost_paise, "user_id": user_id, "tool_name": tool_name}),
+            json.dumps({"status": "failed", "error": _user_facing_error(exc), "cost_paise": cost_paise, "user_id": user_id, "tool_name": tool_name}),
             ex=_TOOL_JOB_TTL,
         )
         raise
