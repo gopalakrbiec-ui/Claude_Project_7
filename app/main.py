@@ -87,6 +87,11 @@ def create_app() -> FastAPI:
     app.include_router(inspire_router)
     app.include_router(prompts_router)
 
+    # Admin dashboard — no-op unless ADMIN_PASSWORD is set in the environment
+    from app.admin import setup_admin
+    from app.core.database import get_engine
+    setup_admin(app, get_engine())
+
     return app
 
 

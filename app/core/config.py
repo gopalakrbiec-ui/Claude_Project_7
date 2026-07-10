@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False)
 
     # ------------------------------------------------------------------
+    # Admin dashboard — /admin, password-gated (see app/admin.py)
+    # ------------------------------------------------------------------
+    admin_username: str = Field(default="admin")
+    admin_password: str = Field(default="", description="Empty disables the /admin dashboard entirely")
+
+    # ------------------------------------------------------------------
     # PostgreSQL
     # ------------------------------------------------------------------
     database_url: PostgresDsn = Field(
