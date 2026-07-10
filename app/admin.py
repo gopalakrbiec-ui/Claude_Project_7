@@ -80,7 +80,6 @@ class OrderAdmin(ModelView, model=Order):
     column_searchable_list = [Order.idempotency_key]
     column_sortable_list = [Order.id, Order.created_at, Order.status, Order.price_paise]
     column_default_sort = [(Order.created_at, True)]
-    column_filters = [Order.status, Order.user_id, Order.template_id]
     can_create = False
     can_edit = False
     can_delete = False
@@ -97,7 +96,6 @@ class GenerationJobAdmin(ModelView, model=GenerationJob):
     ]
     column_sortable_list = [GenerationJob.id, GenerationJob.created_at, GenerationJob.status]
     column_default_sort = [(GenerationJob.created_at, True)]
-    column_filters = [GenerationJob.status, GenerationJob.provider]
     can_create = False
     can_edit = False
     can_delete = False
@@ -115,7 +113,6 @@ class PaymentAdmin(ModelView, model=Payment):
     column_searchable_list = [Payment.gateway_order_id, Payment.gateway_payment_id]
     column_sortable_list = [Payment.id, Payment.created_at, Payment.amount_paise, Payment.status]
     column_default_sort = [(Payment.created_at, True)]
-    column_filters = [Payment.status, Payment.gateway, Payment.user_id]
     can_create = False
     can_edit = False
     can_delete = False
@@ -132,7 +129,6 @@ class CreditLedgerAdmin(ModelView, model=CreditLedger):
     ]
     column_sortable_list = [CreditLedger.id, CreditLedger.created_at, CreditLedger.delta_paise]
     column_default_sort = [(CreditLedger.created_at, True)]
-    column_filters = [CreditLedger.reason, CreditLedger.user_id]
     can_create = False
     can_edit = False
     can_delete = False
@@ -161,7 +157,7 @@ class TemplateAdmin(ModelView, model=Template):
         Template.base_price_paise, Template.active, Template.is_featured,
     ]
     column_searchable_list = [Template.name, Template.category]
-    column_filters = [Template.category, Template.active, Template.is_featured]
+    column_sortable_list = [Template.id, Template.category, Template.base_price_paise]
     can_create = False
     can_delete = False
     page_size = 50
@@ -175,7 +171,7 @@ class InspireGalleryAdmin(ModelView, model=InspireGalleryItem):
         InspireGalleryItem.id, InspireGalleryItem.category,
         InspireGalleryItem.active, InspireGalleryItem.created_at,
     ]
-    column_filters = [InspireGalleryItem.category, InspireGalleryItem.active]
+    column_sortable_list = [InspireGalleryItem.id, InspireGalleryItem.category, InspireGalleryItem.created_at]
     can_create = False
     page_size = 50
 

@@ -18,11 +18,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        'templates',
-        sa.Column('is_featured', sa.Boolean(), nullable=False, server_default='false'),
-    )
-    op.create_index('ix_templates_is_featured', 'templates', ['is_featured'])
+    # Idempotent — 20260629_0001 (the previous migration) already adds this
+    # same column. Duplicate migration; kept as a no-op rather than removed
+    # since it may already be recorded as applied in some environments.
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {c["name"] for c in inspector.get_columns("templates")}
+    if "is_featured" not in existing_columns:
+        op.add_column(
+            'templates',
+            sa.Column('is_featured', sa.Boolean(), nullable=False, server_default='false'),
+        )
+    existing_indexes = {ix["name"] for ix in inspector.get_indexes("templates")}
+    if "ix_templates_is_featured" not in existing_indexes:
+        op.create_index('ix_templates_is_featured', 'templates', ['is_featured'])
 
 
 def downgrade() -> None:
