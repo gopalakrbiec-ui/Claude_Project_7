@@ -5,7 +5,11 @@ Photo enhancement tools — all fal.ai endpoints, no account unlock needed.
 
 - PhotoRestoreAdapter  : deblur + upscale old/low-quality photos (GFPGAN / CodeFormer)
 - BgRemoveAdapter      : background removal, returns transparent PNG
-- PhotoUpscaleAdapter  : 4× upscale via Real-ESRGAN
+- PhotoUpscaleAdapter  : configurable-scale upscale via clarity-upscaler.
+                         Output pixel size = input size x scale factor — a
+                         2000x3000 phone photo at 4x lands around 8000x12000
+                         ("8K"-class); actual result always depends on the
+                         source photo's own resolution, never a fixed canvas.
 """
 
 import logging
@@ -19,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 _RESTORE_MODEL = "fal-ai/clarity-upscaler"  # general photo enhance + upscale (works on any photo)
 _BG_REMOVE_MODEL = "fal-ai/birefnet"    # background removal (confirmed working)
-_UPSCALE_MODEL = "fal-ai/aura-sr"       # 4x upscaler (confirmed working)
+_UPSCALE_MODEL = "fal-ai/clarity-upscaler"  # same model, driven by a configurable scale factor
 
 
 def _set_fal_key(api_key: str) -> None:
@@ -97,26 +101,32 @@ class BgRemoveAdapter:
 
 class PhotoUpscaleAdapter:
     """
-    4× upscale via Real-ESRGAN. Good for low-res source photos.
+    Configurable-scale upscale via clarity-upscaler. scale=2/4/6 roughly map
+    to the app's "HD" / "Ultra (8-16K)" / "Max" tiers — actual output pixel
+    dimensions are always input_size x scale, never a fixed target canvas.
     """
 
-    def __init__(self, api_key: str, *, cost_paise: int = 150, timeout_seconds: float = 60.0) -> None:
+    def __init__(self, api_key: str, *, cost_paise: int = 150, timeout_seconds: float = 120.0) -> None:
         _set_fal_key(api_key)
         self._cost_paise = cost_paise
         self._timeout_seconds = timeout_seconds
 
     async def upscale(self, *, image_url: str, scale: int = 4) -> tuple[bytes, int]:
-        """Returns (upscaled_image_bytes, cost_paise). scale param kept for API compat."""
+        """Returns (upscaled_image_bytes, cost_paise)."""
         async def _run() -> tuple[bytes, int]:
-            logger.info("PhotoUpscaleAdapter: submitting upscale via aura-sr")
+            logger.info("PhotoUpscaleAdapter: submitting upscale via clarity-upscaler scale=%d", scale)
             handler = await fal_client.submit_async(
                 _UPSCALE_MODEL,
-                arguments={"image_url": image_url},
+                arguments={"image_url": image_url, "scale": scale, "creativity": 0.15, "resemblance": 0.95},
             )
             result = await handler.get()
-            out_url = (result.get("image") or {}).get("url") or result.get("url")
+            out_url = (
+                (result.get("image") or {}).get("url")
+                or result.get("output")
+                or result.get("url")
+            )
             if not out_url:
-                raise ProviderError(f"aura-sr: no image URL in result: {result}")
+                raise ProviderError(f"clarity-upscaler: no image URL in result: {result}")
             return await _download(out_url), self._cost_paise
 
         return await with_timeout(_run(), seconds=self._timeout_seconds, label="PhotoUpscaleAdapter")

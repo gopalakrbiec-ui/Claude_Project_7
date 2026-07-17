@@ -62,6 +62,12 @@ _TOOL_CATALOG = [
     {"id": "text-to-image",   "name": "Text to Image",   "icon": "text_fields",   "cost_paise": 700,  "category": "creative"},
     {"id": "photo-merge",     "name": "Photo Merge",     "icon": "group",         "cost_paise": 1100, "category": "creative",
      "keywords": ["together", "hugging", "kissing", "collage", "side by side", "wedding", "romantic", "friends"]},
+    {"id": "photo-upscale",   "name": "Photo Upscale",   "icon": "high_quality",  "cost_paise": 2500, "category": "edit",
+     "tiers": [
+         {"key": "hd",    "label": "HD (2x)",         "cost_paise": 2500},
+         {"key": "ultra", "label": "Ultra (4x, ~8-16K)", "cost_paise": 9000},
+         {"key": "max",   "label": "Max (6x)",        "cost_paise": 18000},
+     ]},
     {"id": "kling-video",     "name": "Kling-video",     "icon": "play_circle",   "cost_paise": 4300, "category": "video"},
     {"id": "wan-video",       "name": "Wan-video",       "icon": "play_circle",   "cost_paise": 2200, "category": "video"},
     {"id": "seedance-video",  "name": "Seedance-video",  "icon": "play_circle",   "cost_paise": 2000, "category": "video"},
@@ -83,6 +89,12 @@ _COST_BG_REPLACE = 700
 _COST_REMIX = 1000
 _COST_TEXT2IMG = 700
 _COST_PHOTO_MERGE = 1100
+
+# Upscale cost is estimate-based (clarity-upscaler is compute/megapixel
+# priced on fal.ai) — verify against real billing after first runs and
+# adjust. Output pixel size = input size x scale, never a fixed canvas.
+_UPSCALE_TIER_COST: dict[str, int] = {"hd": 2500, "ultra": 9000, "max": 18000}
+_UPSCALE_TIER_SCALE: dict[str, int] = {"hd": 2, "ultra": 4, "max": 6}
 
 _PHOTO_MERGE_KEYWORDS: dict[str, str] = {
     "together":    "Place all the people together in one natural photo, standing or sitting close together, smiling.",
@@ -253,6 +265,11 @@ class PhotoMergeIn(BaseModel):
     photo_keys: list[str] = Field(..., min_length=2, max_length=4, description="2–4 R2 keys of photos to merge")
     keywords: list[str] = Field(default=[], description="Preset keywords: together | hugging | kissing | collage | side by side | wedding | romantic | friends")
     prompt: str = Field(default="", max_length=400, description="Optional free-text to add to the scene description")
+
+
+class PhotoUpscaleIn(BaseModel):
+    photo_key: str = Field(..., description="R2 key of the photo to upscale")
+    tier: str = Field(default="ultra", description="hd (2x) | ultra (4x, ~8-16K depending on source) | max (6x)")
 
 
 class AnimatePhotoIn(BaseModel):
@@ -618,6 +635,39 @@ async def photo_merge(
         "cost_paise": _COST_PHOTO_MERGE,
     })
     return JobOut(job_id=job_id, cost_paise=_COST_PHOTO_MERGE)
+
+
+# ---------------------------------------------------------------------------
+# Photo Upscale
+# ---------------------------------------------------------------------------
+
+
+@router.post("/photo-upscale", response_model=JobOut)
+async def photo_upscale(
+    body: PhotoUpscaleIn,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JobOut:
+    """
+    Upscale a photo. Output pixel size = input size x scale factor for the
+    chosen tier — never a fixed target resolution. A low-res source photo
+    will not become genuinely sharp 16K detail, just a larger version of
+    itself; tiers are named for the typical result from a modern phone photo.
+    """
+    tier = body.tier.lower().strip()
+    if tier not in _UPSCALE_TIER_COST:
+        raise HTTPException(status_code=422, detail="tier must be one of: hd, ultra, max")
+
+    cost = _UPSCALE_TIER_COST[tier]
+    idem_key = _safe_idem_key(f"tool:photo-upscale:{current_user.id}:{body.photo_key}:{tier}")
+    await _charge(db, current_user, cost, "photo-upscale", idem_key)
+
+    job_id = await _enqueue("photo-upscale", current_user.id, cost, {
+        "photo_key": body.photo_key,
+        "scale": _UPSCALE_TIER_SCALE[tier],
+        "cost_paise": cost,
+    })
+    return JobOut(job_id=job_id, cost_paise=cost)
 
 
 # ---------------------------------------------------------------------------

@@ -234,6 +234,14 @@ async def _dispatch_tool(ctx: dict, settings, tool_name: str, params: dict) -> b
         )
         return data
 
+    if tool_name == "photo-upscale":
+        from app.adapters.photo_tools import PhotoUpscaleAdapter
+        scale = params.get("scale", 4)
+        data, _ = await PhotoUpscaleAdapter(api_key=fal_key, cost_paise=cost).upscale(
+            image_url=presign(key_in), scale=scale
+        )
+        return data
+
     if tool_name == "text-to-image":
         prompt = params.get("prompt", "")
         aspect_ratio = params.get("aspect_ratio", "9:16")
