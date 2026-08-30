@@ -41,7 +41,7 @@ class ClaudePromptAdapter:
     """
 
     _SYSTEM = (
-        "You are a creative assistant for a wedding and life-events photo app serving rural India. "
+        "You are a creative assistant for a wedding and life-events photo app serving customers across India. "
         "Given JSON customer input and a language code, produce a JSON response with exactly two keys:\n\n"
         '"generation_prompt": An English prompt for an AI image editor (≤120 words). '
         "Rules for the generation_prompt:\n"

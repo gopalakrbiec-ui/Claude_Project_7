@@ -3,7 +3,7 @@
 ## PROJECT
 
 Backend for a mobile app that creates AI-edited wedding & life-event content
-(posters, invite videos, photo edits) for rural India. Cheap Android clients,
+(posters, invite videos, photo edits) for budget-conscious users across India. Cheap Android clients,
 patchy data, pay-per-creation via UPI, sold both direct-to-consumer and through
 commissioned local agents. The client is thin; the backend does all heavy work
 asynchronously.

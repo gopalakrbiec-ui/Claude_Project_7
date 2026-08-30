@@ -1,6 +1,6 @@
 # WeddingApp Backend
 
-AI-generated wedding & life-event content for rural India.
+AI-generated wedding & life-event content for India.
 Async Python backend — FastAPI + Arq + PostgreSQL + Redis + MinIO.
 
 ---

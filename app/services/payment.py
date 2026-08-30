@@ -231,7 +231,7 @@ class PaymentService:
 #   • A determined attacker can replay a success callback from a previous
 #     payment against a new order, or craft a fake one entirely.
 #
-#   • Network conditions in rural India mean the callback can fire multiple
+#   • Poor/intermittent network conditions mean the callback can fire multiple
 #     times (retry logic in the SDK), arrive after the webhook, or not arrive
 #     at all (app killed, connectivity dropped).
 #
